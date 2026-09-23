@@ -174,7 +174,6 @@ void HikRobot::capture_start()
     capturing_ = true;
 
     MV_FRAME_OUT raw;
-    MV_CC_PIXEL_CONVERT_PARAM cvt_param{};
 
     while (!capture_quit_) {
       std::this_thread::sleep_for(1ms);
@@ -197,21 +196,35 @@ void HikRobot::capture_start()
           static_cast<unsigned int>(raw.stFrameInfo.enPixelType), raw.stFrameInfo.nFrameLen);
         logged_frame_format = true;
       }
-      cv::Mat rgb_img(cv::Size(raw.stFrameInfo.nWidth, raw.stFrameInfo.nHeight), CV_8UC3);
+      const cv::Size frame_size(raw.stFrameInfo.nWidth, raw.stFrameInfo.nHeight);
+      cv::Mat rgb_img;
 
-      // 用官方 SDK 做 Bayer->RGB，避免手写 type_map 踩 R/B 命名偏移（见 daheng.cpp 同款坑）
-      cvt_param.nWidth = raw.stFrameInfo.nWidth;
-      cvt_param.nHeight = raw.stFrameInfo.nHeight;
-      cvt_param.pSrcData = raw.pBufAddr;
-      cvt_param.nSrcDataLen = raw.stFrameInfo.nFrameLen;
-      cvt_param.enSrcPixelType = raw.stFrameInfo.enPixelType;
-      cvt_param.enDstPixelType = PixelType_Gvsp_RGB8_Packed;
-      cvt_param.pDstBuffer = rgb_img.data;
-      cvt_param.nDstBufferSize = rgb_img.total() * rgb_img.elemSize();
+      // MVS 4.5 returns an error from MV_CC_ConvertPixelType for BayerRG8.
+      // OpenCV 4.5 has only the ambiguous two-letter Bayer aliases. PFNC BayerRG8
+      // is the four-letter RGGB pattern; RGGB->RGB is aliased to BayerRG2BGR.
+      // The apparently opposite suffix is intentional. Keep the result in RGB.
+      int bayer_to_rgb = -1;
+      switch (raw.stFrameInfo.enPixelType) {
+        case PixelType_Gvsp_BayerGR8: bayer_to_rgb = cv::COLOR_BayerGR2BGR; break;
+        case PixelType_Gvsp_BayerRG8: bayer_to_rgb = cv::COLOR_BayerRG2BGR; break;
+        case PixelType_Gvsp_BayerGB8: bayer_to_rgb = cv::COLOR_BayerGB2BGR; break;
+        case PixelType_Gvsp_BayerBG8: bayer_to_rgb = cv::COLOR_BayerBG2BGR; break;
+        default: break;
+      }
 
-      unsigned int cvt_ret = MV_CC_ConvertPixelType(handle_, &cvt_param);
-      if (cvt_ret != MV_OK) {
-        tools::logger()->warn("MV_CC_ConvertPixelType failed: {:#x}", cvt_ret);
+      if (bayer_to_rgb >= 0) {
+        cv::Mat raw_img(frame_size, CV_8UC1, raw.pBufAddr);
+        cv::cvtColor(raw_img, rgb_img, bayer_to_rgb);
+      } else if (raw.stFrameInfo.enPixelType == PixelType_Gvsp_Mono8) {
+        cv::Mat raw_img(frame_size, CV_8UC1, raw.pBufAddr);
+        cv::cvtColor(raw_img, rgb_img, cv::COLOR_GRAY2RGB);
+      } else if (raw.stFrameInfo.enPixelType == PixelType_Gvsp_RGB8_Packed) {
+        cv::Mat raw_img(frame_size, CV_8UC3, raw.pBufAddr);
+        rgb_img = raw_img.clone();
+      } else {
+        tools::logger()->warn(
+          "Unsupported HikRobot pixel type: {:#x}",
+          static_cast<unsigned int>(raw.stFrameInfo.enPixelType));
         MV_CC_FreeImageBuffer(handle_, &raw);
         continue;
       }
