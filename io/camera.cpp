@@ -4,7 +4,9 @@
 
 #include "daheng.hpp"
 #include "hikrobot/hikrobot.hpp"
+#ifdef HAVE_MINDVISION
 #include "mindvision/mindvision.hpp"
+#endif
 #include "tools/logger.hpp"
 #include "tools/yaml.hpp"
 
@@ -19,10 +21,15 @@ Camera::Camera(const std::string & config_path)
   tools::logger()->info("Camera constructor: config_path={}, camera_name={}", config_path, camera_name);
 
   if (camera_name == "mindvision") {
+#ifdef HAVE_MINDVISION
     auto gamma = tools::read<double>(yaml, "gamma");
     auto vid_pid = tools::read<std::string>(yaml, "vid_pid");
     tools::logger()->info("Creating MindVision camera");
     camera_ = std::make_unique<MindVision>(exposure_ms, gamma, vid_pid);
+#else
+    throw std::runtime_error(
+      "camera_name=mindvision, but this build has no MindVision SDK support");
+#endif
   }
 
   else if (camera_name == "hikrobot") {

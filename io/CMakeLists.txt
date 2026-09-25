@@ -7,7 +7,6 @@ add_subdirectory(serial)
 add_library(io STATIC
     daheng.cpp
     hikrobot/hikrobot.cpp
-    mindvision/mindvision.cpp
     usbcamera/usbcamera.cpp
     camera.cpp
     cboard.cpp
@@ -23,24 +22,35 @@ target_include_directories(io PUBLIC driver)
 # hikrobot
 target_include_directories(io PUBLIC hikrobot/include)
 if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64")
-  target_link_directories(io PUBLIC hikrobot/lib/amd64)
+  set(HIKROBOT_LIBRARY_HINT "${CMAKE_CURRENT_SOURCE_DIR}/hikrobot/lib/amd64")
 elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64")
-  target_link_directories(io PUBLIC hikrobot/lib/arm64)
+  set(HIKROBOT_LIBRARY_HINT "${CMAKE_CURRENT_SOURCE_DIR}/hikrobot/lib/arm64")
 else()
   message(FATAL_ERROR "Unsupported architecture: ${CMAKE_HOST_SYSTEM_PROCESSOR}!")
 endif()
+find_library(MVCAMERA_LIBRARY
+  NAMES MvCameraControl
+  HINTS "${HIKROBOT_LIBRARY_HINT}" /opt/MVS/lib/64 /opt/MVS/lib/32
+  REQUIRED)
 
-# mindvision
-target_include_directories(io PUBLIC mindvision/include)
+# mindvision（正式海康配置不需要；SDK 存在时才启用）
 if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64")
-  target_link_directories(io PUBLIC mindvision/lib/amd64)
+  set(MINDVISION_LIBRARY_HINT "${CMAKE_CURRENT_SOURCE_DIR}/mindvision/lib/amd64")
 elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64")
-  target_link_directories(io PUBLIC mindvision/lib/arm64)
+  set(MINDVISION_LIBRARY_HINT "${CMAKE_CURRENT_SOURCE_DIR}/mindvision/lib/arm64")
+endif()
+find_library(MVSDK_LIBRARY NAMES MVSDK HINTS "${MINDVISION_LIBRARY_HINT}")
+if(MVSDK_LIBRARY)
+  target_sources(io PRIVATE mindvision/mindvision.cpp)
+  target_include_directories(io PUBLIC mindvision/include)
+  target_compile_definitions(io PRIVATE HAVE_MINDVISION)
+  target_link_libraries(io PUBLIC "${MVSDK_LIBRARY}")
+  message(STATUS "MindVision SDK found: MindVision camera backend enabled")
 else()
-  message(FATAL_ERROR "Unsupported architecture: ${CMAKE_HOST_SYSTEM_PROCESSOR}!")
+  message(WARNING "MindVision SDK not found. MindVision camera backend will be disabled.")
 endif()
 
-target_link_libraries(io  tools rm MvCameraControl MVSDK usb-1.0 yaml-cpp serial)
+target_link_libraries(io tools rm "${MVCAMERA_LIBRARY}" usb-1.0 yaml-cpp serial)
 
 # 大恒相机驱动需要 Galaxy SDK (libgxiapi)。未安装时跳过，保证海康/迈德威视用户也能编译。
 find_library(GXIAPI_LIBRARY gxiapi)

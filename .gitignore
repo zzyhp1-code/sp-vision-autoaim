@@ -74,6 +74,16 @@ id_rsa
 id_ed25519
 *.key
 *.pem
+*_ed25519
+*_ed25519.pub
+*.p12
+*.pfx
+*.rollback
+*.avi
+*.mp4
+*.mkv
+*.bag
+*.db3
 
 # Temporary copies are not versions
 *.tmp

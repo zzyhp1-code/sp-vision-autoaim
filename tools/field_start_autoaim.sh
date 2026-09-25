@@ -199,9 +199,16 @@ prune_old_logs() {
 
 preflight() {
   local missing_libs
+  local model
 
   [[ -x "$BIN" ]] || fail "找不到可执行文件：$BIN"
   [[ -r "$CONFIG" ]] || fail "找不到颜色运行配置：$CONFIG"
+  for model in \
+    "$PROJECT/assets/tiny_resnet.onnx" \
+    "$PROJECT/assets/yolo26.xml" \
+    "$PROJECT/assets/yolo26.bin"; do
+    [[ -s "$model" ]] || fail "运行模型缺失或为空：$model"
+  done
   [[ -e "$SERIAL" ]] || fail "下位机串口未连接：$SERIAL"
   lsusb | grep -q '2bdf:0001' || fail "未检测到 HikRobot 相机（USB 2bdf:0001）"
 
