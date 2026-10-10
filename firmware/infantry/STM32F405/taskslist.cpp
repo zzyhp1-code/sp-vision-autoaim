@@ -1,4 +1,4 @@
-﻿#include "label.h"
+#include "label.h"
 #include "taskslist.h"
 #include "can.h"
 #include "motor.h"
@@ -310,18 +310,19 @@ void XucTask(void* pvParameters)
 {
 	(void)pvParameters;
 	TickType_t last_wake_time = xTaskGetTickCount();
-	const float degree_to_radian = PI / 180.0f;
 
 	while (true)
 	{
-		float imu_pitch_rad = 0.0f;
-		float imu_yaw_rad = 0.0f;
+		// Wire contract: feedback IMU angles are DEGREES on the wire, matching the
+		// electrical team's firmware and the host's xuc_imu_angle_unit: deg.
+		// Do not convert here -- the host performs deg->rad at its receive layer.
+		float imu_pitch_deg = 0.0f;
+		float imu_yaw_deg = 0.0f;
 #if PANTILE_IMU_ENABLE
 		if (imu_pantile.HasFreshStrictData(HAL_GetTick(), 100U))
 		{
-			// CH010 angles are consumed as degrees by the existing control loop.
-			imu_pitch_rad = imu_pantile.GetStrictAnglePitch() * degree_to_radian;
-			imu_yaw_rad = imu_pantile.GetStrictAngleYaw() * degree_to_radian;
+			imu_pitch_deg = imu_pantile.GetStrictAnglePitch();
+			imu_yaw_deg = imu_pantile.GetStrictAngleYaw();
 		}
 #endif
 
@@ -344,7 +345,7 @@ void XucTask(void* pvParameters)
 			(supply != nullptr) ? static_cast<float>(supply->curspeed) : -32768.0f;
 		xuc.SendFeedback(feedback_mode, xuc_motion_gate_bits,
 			supply_feedback_rpm,
-			packed_wheel_rpm, imu_pitch_rad, imu_yaw_rad);
+			packed_wheel_rpm, imu_pitch_deg, imu_yaw_deg);
 		vTaskDelayUntil(&last_wake_time, pdMS_TO_TICKS(10));
 	}
 }

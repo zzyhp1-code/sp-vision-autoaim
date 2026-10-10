@@ -99,10 +99,7 @@ void IMU::Decode()
 			if (!crc_ok)
 			{
 				crc_error_count++; // CRC异常计数，调试时可判断线序/波特率/协议问题
-				if (frame[6] != 0x91) // 0x91为当前使用的姿态数据帧类型
-				{
-					continue;
-				}
+				continue; // Reject corrupt frames without updating pose or freshness.
 			}
 
 			if (frame[6] == 0x91) // 姿态数据帧：包含加速度、角速度、欧拉角
@@ -119,7 +116,7 @@ void IMU::Decode()
 				angle.yaw = R4(frame + data_offset + 56); // 解析yaw角度float，供云台锁角使用
 				frame_offset = offset; // 记录有效帧偏移，便于Live Watch确认是否错位
 				frame_len = static_cast<uint16_t>(total_len); // 记录有效帧长度
-				parse_ok = crc_ok ? 1 : 2; // 1表示CRC正确，2表示CRC异常但按0x91帧解析
+				parse_ok = 1; // Only CRC-verified frames reach this point.
 				decode_count++; // 成功解析计数递增
 				last_decode_ms = HAL_GetTick();
 				if (crc_ok)

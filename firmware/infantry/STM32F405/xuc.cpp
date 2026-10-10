@@ -86,8 +86,8 @@ void XUC::SendFeedback(
 	uint8_t robot_id,
 	float bullet_speed,
 	uint16_t bullet_count,
-	float imu_pitch_rad,
-	float imu_yaw_rad)
+	float imu_pitch_deg,
+	float imu_yaw_deg)
 {
 	if (uart_ == nullptr)
 	{
@@ -101,8 +101,8 @@ void XUC::SendFeedback(
 	packet.robot_id = robot_id;
 	packet.bullet_speed_TJ = IsFiniteFloat(bullet_speed) ? bullet_speed : 0.0f;
 	packet.bullet_count_TJ = bullet_count;
-	packet.imu_pitch_TJ = IsFiniteFloat(imu_pitch_rad) ? imu_pitch_rad : 0.0f;
-	packet.imu_yaw_TJ = IsFiniteFloat(imu_yaw_rad) ? imu_yaw_rad : 0.0f;
+	packet.imu_pitch_TJ = IsFiniteFloat(imu_pitch_deg) ? imu_pitch_deg : 0.0f;
+	packet.imu_yaw_TJ = IsFiniteFloat(imu_yaw_deg) ? imu_yaw_deg : 0.0f;
 	packet.crc16_TJ = 0U;
 
 	memcpy(transmit_buffer_, &packet, sizeof(packet));

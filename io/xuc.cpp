@@ -5,6 +5,8 @@
 #include <cmath>
 #include <cstddef>
 #include <cstring>
+#include <iterator>
+#include <stdexcept>
 #include <vector>
 
 #include "tools/crc.hpp"
@@ -13,6 +15,67 @@
 
 namespace io
 {
+bool XucSender::imu_at(
+  std::chrono::steady_clock::time_point timestamp, ImuPose & pose,
+  std::chrono::milliseconds max_gap) const
+{
+  if (!enabled_ || max_gap.count() <= 0) return false;
+  std::unique_lock<std::mutex> lock(imu_history_mutex_);
+  imu_history_changed_.wait_for(lock, std::chrono::milliseconds(30), [&] {
+    return !imu_history_.empty() && imu_history_.back().timestamp >= timestamp;
+  });
+  if (imu_history_.empty() || timestamp < imu_history_.front().timestamp ||
+      timestamp > imu_history_.back().timestamp) return false;
+  auto hi = std::lower_bound(imu_history_.begin(), imu_history_.end(), timestamp,
+    [](const ImuPose & sample, auto t) { return sample.timestamp < t; });
+  if (hi == imu_history_.end()) return false;
+  if (hi->timestamp == timestamp) {
+    pose = *hi;
+  } else {
+    if (hi == imu_history_.begin()) return false;
+    const auto lo = std::prev(hi);
+    const auto gap = hi->timestamp - lo->timestamp;
+    if (gap > max_gap || gap <= std::chrono::steady_clock::duration::zero()) return false;
+    const double a = std::chrono::duration<double>(timestamp - lo->timestamp).count() /
+                     std::chrono::duration<double>(gap).count();
+    pose.timestamp = timestamp;
+    pose.yaw = lo->yaw + a * std::remainder(hi->yaw - lo->yaw, 2 * M_PI);
+    pose.pitch = lo->pitch + a * std::remainder(hi->pitch - lo->pitch, 2 * M_PI);
+    pose.bracket_ms = std::chrono::duration<double, std::milli>(gap).count();
+  }
+  pose.yaw = imu_yaw_sign_ * pose.yaw + imu_yaw_offset_rad_;
+  pose.pitch = imu_pitch_sign_ * pose.pitch + imu_pitch_offset_rad_;
+  return true;
+}
+
+bool XucSender::imu_stable_at(
+  std::chrono::steady_clock::time_point timestamp,
+  std::chrono::milliseconds window, double max_range_rad) const
+{
+  if (window.count() <= 0 || !std::isfinite(max_range_rad) || max_range_rad <= 0) return false;
+  std::lock_guard<std::mutex> lock(imu_history_mutex_);
+  const auto begin = timestamp - window;
+  if (imu_history_.empty() || imu_history_.front().timestamp > begin ||
+      imu_history_.back().timestamp < timestamp) return false;
+  auto it = std::lower_bound(imu_history_.begin(), imu_history_.end(), begin,
+    [](const ImuPose & sample, auto t) { return sample.timestamp < t; });
+  if (it != imu_history_.begin()) --it;
+  const double y0 = it->yaw, p0 = it->pitch;
+  double ymin = 0, ymax = 0, pmin = 0, pmax = 0;
+  auto previous = it->timestamp;
+  for (; it != imu_history_.end(); ++it) {
+    if (it->timestamp - previous > std::chrono::milliseconds(30)) return false;
+    const double y = std::remainder(it->yaw - y0, 2 * M_PI);
+    const double p = std::remainder(it->pitch - p0, 2 * M_PI);
+    ymin = std::min(ymin, y); ymax = std::max(ymax, y);
+    pmin = std::min(pmin, p); pmax = std::max(pmax, p);
+    previous = it->timestamp;
+    if (it->timestamp >= timestamp) break;
+  }
+  return std::abs(imu_yaw_sign_) * (ymax - ymin) <= max_range_rad &&
+         std::abs(imu_pitch_sign_) * (pmax - pmin) <= max_range_rad;
+}
+
 XucSender::XucSender(const std::string & config_path)
 {
   auto yaml = tools::load(config_path);
@@ -27,6 +90,13 @@ XucSender::XucSender(const std::string & config_path)
   uint32_t baud = 460800;
   if (yaml["xuc_serial_port"]) port = yaml["xuc_serial_port"].as<std::string>();
   if (yaml["xuc_serial_baud"]) baud = yaml["xuc_serial_baud"].as<uint32_t>();
+  const std::string imu_angle_unit = yaml["xuc_imu_angle_unit"]
+    ? yaml["xuc_imu_angle_unit"].as<std::string>() : "rad";
+  if (imu_angle_unit == "deg") {
+    imu_angle_to_rad_ = M_PI / 180.0;
+  } else if (imu_angle_unit != "rad") {
+    throw std::invalid_argument("xuc_imu_angle_unit must be rad or deg");
+  }
   if (yaml["xuc_yaw_sign"]) yaw_sign_ = yaml["xuc_yaw_sign"].as<double>();
   if (yaml["xuc_pitch_sign"]) pitch_sign_ = yaml["xuc_pitch_sign"].as<double>();
   if (yaml["xuc_imu_yaw_sign"]) imu_yaw_sign_ = yaml["xuc_imu_yaw_sign"].as<double>();
@@ -70,11 +140,11 @@ XucSender::XucSender(const std::string & config_path)
     // 启动接收线程：解析新版 TxPacket_TJ
     recv_thread_ = std::thread([this] { recv_loop(); });
     tools::logger()->info(
-      "[XUC] serial opened {} @ {} baud, angles=rad, yaw_sign={}, pitch_sign={}, "
+      "[XUC] serial opened {} @ {} baud, command_angles=rad, imu_wire_unit={}, imu_output=rad, yaw_sign={}, pitch_sign={}, "
       "imu_yaw_sign={}, imu_pitch_sign={}, allow_control={}, allow_shoot={}, "
       "require_feedback={}, require_auto_mode={}, max_yaw_excursion_deg={:.2f}, "
       "lock_pitch={}",
-      port, baud, yaw_sign_, pitch_sign_, imu_yaw_sign_, imu_pitch_sign_, allow_control_,
+      port, baud, imu_angle_unit, yaw_sign_, pitch_sign_, imu_yaw_sign_, imu_pitch_sign_, allow_control_,
       allow_shoot_, require_feedback_for_control_, require_auto_mode_for_control_,
       max_yaw_excursion_rad_ * 180.0 / M_PI, lock_pitch_for_control_);
     if (!allow_control_) {
@@ -238,9 +308,21 @@ void XucSender::recv_loop()
             robot_id_.store(pkt.robot_id, std::memory_order_relaxed);
             bullet_speed_.store(pkt.bullet_speed, std::memory_order_relaxed);
             bullet_count_.store(pkt.bullet_count, std::memory_order_relaxed);
-            imu_pitch_.store(pkt.imu_pitch, std::memory_order_relaxed);
-            imu_yaw_.store(pkt.imu_yaw, std::memory_order_relaxed);
+            imu_pitch_.store(static_cast<float>(pkt.imu_pitch * imu_angle_to_rad_), std::memory_order_relaxed);
+            imu_yaw_.store(static_cast<float>(pkt.imu_yaw * imu_angle_to_rad_), std::memory_order_relaxed);
 
+            {
+              std::lock_guard<std::mutex> lock(imu_history_mutex_);
+              imu_history_.push_back({
+                std::chrono::steady_clock::time_point(std::chrono::nanoseconds(now_ns)),
+                pkt.imu_yaw * imu_angle_to_rad_, pkt.imu_pitch * imu_angle_to_rad_, 0.0});
+              while (imu_history_.size() > 1 &&
+                     now_ns - std::chrono::duration_cast<std::chrono::nanoseconds>(
+                       imu_history_.front().timestamp.time_since_epoch()).count() > 2000000000LL) {
+                imu_history_.pop_front();
+              }
+            }
+            imu_history_changed_.notify_all();
             last_rx_ns_.store(now_ns, std::memory_order_relaxed);
             valid_packets_.fetch_add(1, std::memory_order_relaxed);
             rx_valid_.store(true, std::memory_order_relaxed);

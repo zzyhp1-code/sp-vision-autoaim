@@ -5,6 +5,7 @@
 #include <fstream>
 #include <string>
 #include <thread>
+#include <filesystem>
 
 #include "io/command.hpp"
 #include "io/xuc.hpp"
@@ -14,15 +15,71 @@ static bool near(double value, double expected, double tolerance)
   return std::fabs(value - expected) <= tolerance;
 }
 
+// Virtual-port only: the emulator supplies stationary, moving, yaw-wrap,
+// interrupted, and recovered phases. Never transmits motor/shoot commands.
+static int test_pose_history(io::XucSender & xuc)
+{
+  using namespace std::chrono;
+  bool stationary = false, moving = false, wrapped = true, missing = false, recovered = false;
+  bool paired = true, bounded_bracket = true;
+  int checked = 0, wrap_checked = 0;
+  const auto start = steady_clock::now();
+  while (steady_clock::now() - start < milliseconds(3300)) {
+    const auto now = steady_clock::now();
+    const double elapsed = duration<double>(now - start).count();
+    const auto target = now - milliseconds(20);
+    io::XucSender::ImuPose pose;
+    const bool valid = xuc.imu_at(target, pose);
+    const bool stable = xuc.imu_stable_at(target, milliseconds(200), .001);
+    if (elapsed > .4 && elapsed < .65 && valid && stable) stationary = true;
+    if (elapsed > .9 && elapsed < 1.15 && valid) {
+      ++checked;
+      bounded_bracket = bounded_bracket && pose.timestamp == target && pose.bracket_ms > 0 && pose.bracket_ms <= 30;
+      paired = paired && near(pose.pitch, .02 - .2 * (pose.yaw - .01), 1e-6);
+      moving = moving || !stable;
+    }
+    if (elapsed > 1.4 && elapsed < 1.55 && valid) {
+      ++wrap_checked;
+      wrapped = wrapped && std::abs(std::remainder(pose.yaw - .01, 2 * M_PI)) > 3.1;
+    }
+    if (elapsed > 1.9 && elapsed < 2.1 && !valid && !stable) missing = true;
+    if (elapsed > 2.8 && valid && stable) recovered = true;
+    std::this_thread::sleep_for(milliseconds(10));
+  }
+  io::XucSender::ImuPose unused;
+  const bool outside = !xuc.imu_at(start - seconds(5), unused) &&
+                       !xuc.imu_at(steady_clock::now() + seconds(5), unused);
+  const bool passed = stationary && moving && wrapped && missing && recovered &&
+                      checked > 5 && wrap_checked > 5 && paired && bounded_bracket && outside;
+  std::printf("POSE_HISTORY stationary=%d moving=%d wrap=%d gap=%d recovery=%d pair=%d bracket=%d outside=%d samples=%d\n",
+    stationary, moving, wrapped, missing, recovered, paired, bounded_bracket, outside, checked);
+  std::printf("POSE_HISTORY_RESULT=%s\n", passed ? "PASS" : "FAIL");
+  return passed ? 0 : 3;
+}
+
 int main(int argc, char ** argv)
 {
   if (argc < 2) {
-    std::printf("用法: %s <serial_port> [--safety]\n", argv[0]);
+    std::printf("用法: %s /dev/pts/N [--safety|--pose-history] [--imu-unit=deg|rad]\n", argv[0]);
     return 1;
   }
 
   const std::string port = argv[1];
-  const bool safety_profile = argc >= 3 && std::string(argv[2]) == "--safety";
+  if (port.rfind("/dev/pts/", 0) != 0 || !std::filesystem::is_character_file(port)) {
+    std::printf("[FAIL] This test requires a virtual /dev/pts/* port\n");
+    return 1;
+  }
+  bool safety_profile = false;
+  bool pose_history = false;
+  std::string imu_angle_unit = "rad";
+  for (int i = 2; i < argc; ++i) {
+    const std::string option = argv[i];
+    if (option == "--safety") safety_profile = true;
+    else if (option == "--pose-history") pose_history = true;
+    else if (option == "--imu-unit=deg") imu_angle_unit = "deg";
+    else if (option == "--imu-unit=rad") imu_angle_unit = "rad";
+    else return 1;
+  }
   const std::string cfg_path = "/tmp/xuc_link_test.yaml";
 
   {
@@ -31,10 +88,14 @@ int main(int argc, char ** argv)
       << "xuc_enable: true\n"
       << "xuc_serial_port: \"" << port << "\"\n"
       << "xuc_serial_baud: 460800\n"
+      << "xuc_imu_angle_unit: " << imu_angle_unit << "\n"
+      << "xuc_imu_yaw_sign: " << (pose_history ? "-1" : "1") << "\n"
+      << "xuc_imu_yaw_offset_rad: " << (pose_history ? "0.01" : "0") << "\n"
+      << "xuc_imu_pitch_offset_rad: " << (pose_history ? "0.02" : "0") << "\n"
       << "xuc_yaw_sign: 1\n"
       << "xuc_pitch_sign: -1\n"
-      << "xuc_allow_control: true\n"
-      << "xuc_allow_shoot: " << (safety_profile ? "false" : "true") << "\n"
+      << "xuc_allow_control: " << (pose_history ? "false" : "true") << "\n"
+      << "xuc_allow_shoot: " << (safety_profile || pose_history ? "false" : "true") << "\n"
       << "xuc_require_feedback_for_control: "
       << (safety_profile ? "true" : "false") << "\n"
       << "xuc_require_auto_mode_for_control: "
@@ -50,7 +111,13 @@ int main(int argc, char ** argv)
 
   if (!xuc.enabled()) {
     std::printf("[FAIL] XUC串口无法打开\n");
+    std::remove(cfg_path.c_str());
     return 2;
+  }
+  if (pose_history) {
+    const int code = test_pose_history(xuc);
+    std::remove(cfg_path.c_str());
+    return code;
   }
 
   io::Command command{};
@@ -111,6 +178,8 @@ int main(int argc, char ** argv)
         near(xuc.bullet_speed(), 14.5, 0.01) &&
         xuc.bullet_count() > 0 &&
         near(xuc.imu_pitch(), 0.10, 0.001) &&
+        (near(xuc.raw_imu_yaw(), 0.50, 0.001) ||
+         near(xuc.raw_imu_yaw(), 0.55, 0.001)) &&
         (near(xuc.imu_yaw(), 0.50, 0.001) ||
          near(xuc.imu_yaw(), 0.55, 0.001));
     }
@@ -146,5 +215,6 @@ int main(int argc, char ** argv)
     "XUC_LINK_RESULT=%s\n",
     passed ? "PASS" : "FAIL");
 
+  std::remove(cfg_path.c_str());
   return passed ? 0 : 3;
 }

@@ -30,6 +30,7 @@
 #include <cmath>
 #include <fstream>
 #include <memory>
+#include <limits>
 #include <opencv2/core/eigen.hpp>
 #include <opencv2/opencv.hpp>
 #include <string>
@@ -96,7 +97,7 @@ Params load_params(const std::string & c_path, const std::string & e_path)
   auto K_data = cyaml["camera_matrix"].as<std::vector<double>>();
   auto D_data = cyaml["distort_coeffs"].as<std::vector<double>>();
   p.K = cv::Matx33d(K_data.data());
-  p.D = cv::Mat(D_data);
+  p.D = cv::Mat(D_data).clone();  // Own data after the YAML vector goes out of scope.
 
   auto eyaml = YAML::LoadFile(e_path);
   auto R_c2g_data = eyaml["R_camera2gimbal"].as<std::vector<double>>();
@@ -118,8 +119,8 @@ std::vector<cv::Point3f> centers_3d(const cv::Size & pattern_size, const float s
 Eigen::Quaterniond read_q(const std::string & q_path)
 {
   std::ifstream f(q_path);
-  double w, x, y, z;
-  f >> w >> x >> y >> z;
+  double w = 0, x = 0, y = 0, z = 0;
+  if (!(f >> w >> x >> y >> z)) return Eigen::Quaterniond(0, 0, 0, 0);
   return {w, x, y, z};
 }
 
@@ -156,7 +157,13 @@ std::vector<Sample> collect_offline(const std::string & folder, const cv::Size &
       fmt::print("[skip] 未检测到棋盘: {}\n", img_path);
       continue;
     }
-    samples.push_back({read_q(q_path), std::move(corners), img});
+    auto q = read_q(q_path);
+    if (!std::isfinite(q.norm()) || q.norm() < .99 || q.norm() > 1.01) {
+      fmt::print("[skip] Invalid quaternion: {}\n", q_path);
+      continue;
+    }
+    q.normalize();
+    samples.push_back({q, std::move(corners), img});
   }
   return samples;
 }
@@ -216,9 +223,19 @@ std::vector<FrameData> build_frames(
     f.corners = s.corners;
     f.img = s.img;
     cv::Mat rvec, tvec;
-    cv::solvePnP(pts3d, s.corners, K, D, rvec, tvec, false, cv::SOLVEPNP_IPPE);
+    if (!cv::solvePnP(pts3d, f.corners, K, D, rvec, tvec, false, cv::SOLVEPNP_IPPE)) continue;
     cv::Mat R;
     cv::Rodrigues(rvec, R);
+    if (!frames.empty()) {
+      Eigen::Matrix3d current;
+      cv::cv2eigen(R, current);
+      if (Eigen::AngleAxisd(current * frames.back().R_t2c.transpose()).angle() > CV_PI / 2) {
+        std::reverse(f.corners.begin(), f.corners.end());
+        if (!cv::solvePnP(pts3d, f.corners, K, D, rvec, tvec, false, cv::SOLVEPNP_IPPE)) continue;
+        cv::Rodrigues(rvec, R);
+        fmt::print("Corrected reversed board numbering in frame {}\n", frames.size() + 1);
+      }
+    }
     cv::cv2eigen(R, f.R_t2c);
     cv::cv2eigen(tvec, f.t_t2c);
     frames.push_back(std::move(f));
@@ -395,6 +412,7 @@ Report compute_report(
       {static_cast<float>(wp_m[0]), static_cast<float>(wp_m[1]), static_cast<float>(wp_m[2])});
   }
   std::vector<double> rep_all;
+  int invalid_projection_frames = 0;
   std::vector<std::vector<cv::Point2f>> frame_px(n);
   std::vector<std::vector<int>> frame_valid(n);
   for (int i = 0; i < n; i++) {
@@ -408,6 +426,15 @@ Report compute_report(
         valid.push_back(board_world_m[k]);
         valid_idx.push_back(k);
       }
+    }
+    if (valid.size() != board_world_m.size()) {
+      ++invalid_projection_frames;
+      fmt::print("[failure] frame {}: only {}/{} board points are in front of camera\n",
+                 i + 1, valid.size(), board_world_m.size());
+    }
+    if (valid.empty()) {
+      frame_valid[i] = valid_idx;
+      continue;
     }
     cv::Mat rvec, tvec_cv;
     cv::eigen2cv(R_w2c, rvec);
@@ -430,6 +457,9 @@ Report compute_report(
   for (double v : rep_all) rep_var += (v - r.rep_mean) * (v - r.rep_mean);
   r.rep_std = rep_all.empty() ? 0 : std::sqrt(rep_var / rep_all.size());
   r.rep_max = rep_all.empty() ? 0 : *std::max_element(rep_all.begin(), rep_all.end());
+  if (invalid_projection_frames > 0 || rep_all.empty()) {
+    r.rep_mean = r.rep_std = r.rep_max = std::numeric_limits<double>::infinity();
+  }
 
   // 交叉校验: 内联投影 vs 生产 Solver::world2pixel(当前外参)
   if (solver && n > 0) {

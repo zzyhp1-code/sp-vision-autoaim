@@ -47,6 +47,35 @@ API 的 STM32CubeF4 v1.14.0 HAL 生成 ELF、BIN 与 HEX。该独立构建流程
 生成文件，不连接或烧录主控。HAL 版本不可擅自升级，否则会把电控工程使用
 的 `CanTxMsgTypeDef`/`HAL_CAN_Transmit` 接口替换为不兼容的新接口。
 
+## CH010 姿态帧校验口径（口径不对就会丢帧）
+
+`imu.cpp` 对 CH010/HI226 的 `0x91` 姿态帧是**严格校验**：校验不过直接丢弃，
+既不更新姿态也不刷新新鲜度。所以改动这里之前必须先确认口径，否则姿态会静默全丢。
+
+已用**实车抓取的真实帧**复核通过的约定（2026-10-10）：
+
+- 帧头 `5A A5`；长度字段是 payload 字节数（小端）；总长 = payload + 6。
+- 帧内 CRC 字段在偏移 4、5，**低字节在前**（小端）。
+- 校验值 = CRC16（多项式 `0x1021`、初值 `0`、不取反、不反射），
+  覆盖 **SOF + LEN + payload**（偏移 0–3 与 6 之后），**跳过**偏移 4、5 的两个 CRC 字节。
+
+实证样本（`tests/hipnuc_crc_test.cpp` 里的 `live_frame`，共 82 字节、payload 76 字节）：
+
+```text
+5A A5 4C 00 02 9D 91 …     帧内 CRC 字节 = 02 9D（小端 = 0x9D02）
+上述口径计算 = 0x9D02  ✅ 一致
+仅算 payload = 0xB245  ❌（旧写法）   整帧含 CRC 字节 = 0x47B7
+```
+
+复核方式（两者等价，任选）：
+
+- `scripts/analysis/hipnuc_crc_check.py`：仓库根的 Python 独立实现，打印各口径对比；
+- `g++ -std=c++17 -I STM32F405 tests/hipnuc_crc_test.cpp -o crc_test && ./crc_test`
+  （通过时输出 `HIPNUC_CRC_TEST=PASS`），或 `cmake -S tests -B <临时目录>` 后构建。
+
+两点提醒：`tests/` 是小规模主机侧测试，不属于固件镜像；实车**当前运行的固件版本**
+仍以电控现场确认为准，仓库源码与线上不一致时以实测为准。
+
 ## 烧录前备份
 
 `tools/backup_stm32f405_flash.ps1` 使用 CMSIS-DAP 和 OpenOCD 读取并校验
@@ -57,7 +86,11 @@ API 的 STM32CubeF4 v1.14.0 HAL 生成 ELF、BIN 与 HEX。该独立构建流程
 
 - 协议包头为 `SP`，小电脑到下位机 14 字节，下位机到小电脑 20 字节。
 - CRC16 初值为 `0xFFFF`，CRC 低字节在前。
-- 下位机以 100 Hz 主动发送反馈，IMU 角度由度转换为弧度。
+- 下位机以 100 Hz 主动发送反馈。
+- **反馈里的 `imu_pitch` / `imu_yaw` 是角度（度），不是弧度**：直接转发 CH010 的原生角度值，
+  下位机不做任何换算。这与电控当前烧录的固件一致，对应上位机的 `xuc_imu_angle_unit: deg`
+  （上位机在自己的接收层做 deg→rad）。**改这里之前先两边对齐**，否则上位机会把角度当弧度，
+  读数会差 57.3 倍。（2026-10-10 修正：本仓库固件原先会先把度换算成弧度再发，已改为直发角度。）
 - Phase 2A 只有在遥控器、严格 CRC IMU、XUC 新鲜度和显式拨杆边沿全部通过时，
   才允许 yaw 在解锁点 ±1° 内以不超过 5°/s 运动。
 - pitch 与发射机构仍不接收 XUC 命令；详见 `docs/XUC_V2_PHASE2A_BOUNDED_YAW.md`。

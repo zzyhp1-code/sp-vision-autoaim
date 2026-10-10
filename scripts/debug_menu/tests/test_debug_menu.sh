@@ -1,17 +1,12 @@
 #!/usr/bin/env bash
 
-# Safe repository-side checks. Hardware behavior still requires the target
-# Ubuntu machine; this test never starts a camera, inference model, or motor.
-
-# 审查警告：当前测试直接使用真实 ROOT/build 和 logs/runtime，且会运行菜单。
-# 只有缺少构建产物时，“缺少程序”用例才安全；现场存在产物时不能承诺无硬件操作。
-# 运行前应改为独立测试夹具与模拟程序，禁止在正在调试的工程目录直接执行整套测试。
+# Safe checks using an isolated project fixture. No hardware programs are started.
 
 set -u
 
-ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../.." && pwd -P)"
-ENTRY="$ROOT/scripts/sp_vision_debug.sh"
-MENU_DIR="$ROOT/scripts/debug_menu"
+SOURCE_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../.." && pwd -P)"
+ENTRY="$SOURCE_ROOT/scripts/sp_vision_debug.sh"
+MENU_DIR="$SOURCE_ROOT/scripts/debug_menu"
 BASH_BIN="${BASH:-/usr/bin/bash}"
 PYTHON_BIN="${SP_VISION_TEST_PYTHON:-}"
 if [[ -z "$PYTHON_BIN" ]]; then
@@ -24,6 +19,20 @@ if [[ -z "$PYTHON_BIN" ]]; then
   fi
 fi
 TMP="$(mktemp -d "${TMPDIR:-/tmp}/sp_vision_menu_test.XXXXXX")"
+ROOT="$TMP/project"
+mkdir -p -- "$ROOT/scripts/debug_menu" "$ROOT/configs"
+cp -- "$MENU_DIR/yaml_tool.py" "$ROOT/scripts/debug_menu/yaml_tool.py"
+printf '# Isolated test fixture\n' >"$ROOT/CMakeLists.txt"
+cat >"$ROOT/configs/standard.yaml" <<'YAML'
+enemy_color: red
+inference_backend: openvino
+yolo_name: armor
+armor_model_path: models/missing.xml
+xuc_enable: false
+xuc_allow_control: false
+xuc_allow_shoot: false
+YAML
+export SP_VISION_ROOT="$ROOT"
 cleanup() {
   rm -rf -- "$TMP"
 }
@@ -143,7 +152,7 @@ test_missing_model_fails_safely() {
     printf 'SKIP: 无法创建临时 build/ 目录\n'
     return
   fi
-  if ! printf '#!/usr/bin/env bash\nexit 0\n' >"$fake_binary"; then
+  if ! printf '#!/usr/bin/env bash\nif [[ "$1" == "--help" ]]; then\n  printf "config-path tradition\\n"\n  exit 0\nfi\nexit 99\n' >"$fake_binary"; then
     printf 'SKIP: 无法创建临时假可执行文件\n'
     rmdir -- "$ROOT/build" 2>/dev/null || true
     return
@@ -156,9 +165,10 @@ test_missing_model_fails_safely() {
   }
   run_menu '3\n1\n0\n0\n'
   local status=$?
-  if grep -q '模型不存在\|当前版本接口不兼容' "$TMP/stdout" "$TMP/stderr"; then
+  if grep -q '模型不存在' "$TMP/stdout" "$TMP/stderr"; then
     ok "缺少模型时安全失败"
   else
+    cat "$TMP/stdout" "$TMP/stderr" >&2
     bad "缺少模型时未给出明确接口错误"
   fi
   rm -f -- "$fake_binary"
@@ -379,7 +389,7 @@ test_shellcheck_if_available() {
 
 test_source_tree_if_available() {
   if [[ -n "$PYTHON_BIN" ]]; then
-    "$PYTHON_BIN" "$ROOT/scripts/check_source_tree.py" >"$TMP/source_tree" 2>&1
+    "$PYTHON_BIN" "$SOURCE_ROOT/scripts/check_source_tree.py" >"$TMP/source_tree" 2>&1
     require_status 0 "check_source_tree.py" "$?"
   else
     printf 'SKIP: python3 不可用\n'

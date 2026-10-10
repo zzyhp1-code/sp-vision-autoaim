@@ -34,7 +34,7 @@ public:
 
 	BaseType_t pd_Rx = false;
 	QueueHandle_t* queueHandler = NULL;
-	uint8_t parse_ok = 0; // [后续修改] 0未解析，1 CRC正确解析，2 CRC异常但帧类型可用
+	uint8_t parse_ok = 0; // [后续修改] 0未解析，1 CRC正确解析
 	uint16_t frame_offset = 0, frame_len = 0; // [后续修改] 记录本次有效IMU帧在DMA缓冲区中的偏移和长度
 	uint32_t decode_count = 0, crc_error_count = 0, header_error_count = 0; // [后续修改] IMU调试计数器，用于判断是否持续解码
 	uint32_t last_decode_ms = 0, last_strict_decode_ms = 0; // 最近任意解析/严格CRC解析时间

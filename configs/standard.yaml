@@ -174,16 +174,18 @@ trigger_source: 2
 trigger_activation: 0
 
 #####-----相机标定参数（海康内参/外参，1440×1080）-----#####
-# 重投影误差: 0.2769px
-camera_matrix: [2321.1448516431083, 0, 773.51514374772069, 0, 2335.8405999820166, 558.35666238582371, 0, 0, 1]
-distort_coeffs: [-0.052990616769919285, 0.13874211747473905, 0.00113447179189630067, 0.0036897020313975178, 0]
+# 2026-10-09, 23 images; mean reprojection error: 0.5066px; RMS: 0.5962px
+# 1440x1080 ROI, OffsetX=0, OffsetY=0; full sensor: 3072x2048
+camera_matrix: [2598.5969903289788, 0, 1465.5059081485417, 0, 2617.5444216804849, 1053.8878367134425, 0, 0, 1]
+distort_coeffs: [-0.016769610101706224, 0.095334726640603468, 0.0030276490387946948, 0.0015186953278450821, 0]
 
 R_gimbal2imubody: [-1, 0, 0, 0, 1, 0, 0, 0, -1]
 
 # 相机同理想情况的偏角: yaw-13.87 pitch4.87 roll1.39（与 calibration_hikrobot.yaml 一致，2026-08-04 外参验证用）
 # 安全候选：保留官方 yaw/pitch，移除实测水平扫动中被证伪的 4.8655° roll 串扰
-R_camera2gimbal: [0.0038423858201756295, -0.010128236856560271, 0.99994132572335792, -0.99999261800835737, -0.000038916880965041942, 0.0038421887339723146, -0.000000000000000014343086056924051, -0.99994870733635821, -0.01012831162367236]
-t_camera2gimbal: [0.01356599679910985, -0.040874146298378239, 0.061329060010173779]
+# 2026-10-10 回填：R 取 011048 / wide / wide4 三轮独立采集的平均（跨批次一致性 ±0.9°）；t 用机械实测值（IMU 在相机后方 20cm、右侧 5cm、低 2cm）
+R_camera2gimbal: [0.021136135, -0.009577720, 0.999730729, -0.999776201, -0.001103297, 0.021126526, 0.000900656, -0.999953524, -0.009598896]
+t_camera2gimbal: [0.20, 0.05, 0.02]
 
 #####-----CAN协议配置-----#####
 new_can_quat_id: 0x150
@@ -206,9 +208,10 @@ R_pitch: [1]
 xuc_enable: true                 # 接收IMU，发送云台目标角
 xuc_serial_port: "/dev/serial/by-id/usb-1a86_USB_Serial-if00-port0"
 xuc_serial_baud: 460800          # 与下位机 USART6 一致
-xuc_yaw_sign: 0.94074425         # 世界系目标角 -> 下位机原始yaw：同号并除以1.06298816
+xuc_yaw_sign: 1                 # Same command yaw direction; no inverse of the removed IMU gain
 xuc_pitch_sign: 1                # 实车验收：正号使目标朝图像垂直误差减小方向运动
-xuc_imu_yaw_sign: -1.06298816    # 零roll三点实测：下位机原始yaw -> 世界系yaw
+xuc_imu_angle_unit: deg         # 当前下位机姿态回传为度；驱动统一转换为弧度
+xuc_imu_yaw_sign: -1            # Match calibration; user verified raw yaw on 2026-10-10
 xuc_imu_pitch_sign: 1            # 下位机IMU pitch方向，实机小角度确认
 xuc_imu_yaw_offset_rad: 0.0
 xuc_imu_pitch_offset_rad: 0.0
@@ -267,8 +270,8 @@ xuc_gyro_post_feed_recovery_ms: 550.0
 # identity switch is ~90 deg. Restart the two-frame window on a large phase jump.
 xuc_gyro_candidate_max_phase_step_deg: 20.0
 xuc_direct_yaw_guard: true              # 当前以稳定测量为主；保留预测接口供 EKF 调稳后启用
-xuc_direct_yaw_boresight_correction_deg: -1.30  # measured camera/gimbal zero, 2026-09-05
-xuc_direct_yaw_impact_correction_deg: -2.12  # persistent same-side left miss: another 0.62 deg / about 5.0 cm right at 4.6 m
+xuc_direct_yaw_boresight_correction_deg: 0.0  # 已重置：2026-10-10 换新外参，等现场用固定靶重拉零点
+xuc_direct_yaw_impact_correction_deg: 0.0  # 已重置：旧值是按旧外参调出来的
 xuc_yaw_tracking_pi_enabled: false      # disabled: field jitter was model/lead switching; keep one dynamic controller
 xuc_yaw_tracking_kp: 0.0                # disable fast outer proportional loop; lower board already owns position P
 xuc_yaw_tracking_ki_per_s: 0.18         # slow static-bias learner; about 0.2 deg/s at the observed residual

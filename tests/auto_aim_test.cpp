@@ -382,10 +382,8 @@ int main(int argc, char * argv[])
 
     cv::resize(img, img, {}, 0.5, 0.5);  // 显示时缩小图片尺寸
 
-    // 相机输出为 RGB 格式，imshow 需要 BGR 格式，进行转换
-    cv::Mat img_bgr;
-    cv::cvtColor(img, img_bgr, cv::COLOR_RGB2BGR);
-    cv::imshow("reprojection", img_bgr);
+    // 相机输出为 BGR，imshow 直接可用
+    cv::imshow("reprojection", img);
     auto key = cv::waitKey(1);
     if (key == 'q') break;
   }

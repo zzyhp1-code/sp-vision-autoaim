@@ -145,3 +145,10 @@ add_custom_command(TARGET stm32f405_xuc_v2 POST_BUILD
   COMMAND "${CMAKE_SIZE}" "$<TARGET_FILE:stm32f405_xuc_v2>"
   VERBATIM
 )
+
+# 主机侧单元测试：与固件镜像无关，不参与交叉编译，也不产生任何烧录物。
+# 单独构建：cmake -S firmware/infantry/tests -B <临时目录> && cmake --build <临时目录>
+# 用途：CRC 校验口径是不合格帧直接丢弃，改动后必须先在这里跑通再烧录。
+if(NOT CMAKE_CROSSCOMPILING AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/CMakeLists.txt")
+  add_subdirectory(tests)
+endif()

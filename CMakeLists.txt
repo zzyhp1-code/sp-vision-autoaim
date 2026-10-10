@@ -285,6 +285,17 @@ foreach(estimator_test
   target_compile_options(${estimator_test} PRIVATE -UNDEBUG)
 endforeach()
 
+# 四角点核对工具：只读导出装甲板四点与几何量，不发送任何控制帧。
+if(OpenVINO_FOUND)
+    add_executable(corner_probe tests/corner_probe.cpp)
+    target_link_libraries(corner_probe ${OpenCV_LIBS} fmt::fmt yaml-cpp tools auto_aim io)
+endif()
+
+# XUC 上下位机运动联调探针：默认 dry-run，--execute 才下发 control=1，带步长与门控硬保护。
+# 只依赖 io（串口），不需要 OpenVINO。
+add_executable(xuc_motion_probe tests/xuc_motion_probe.cpp)
+target_link_libraries(xuc_motion_probe fmt::fmt yaml-cpp tools io)
+
 target_link_libraries(auto_aim_test ${OpenCV_LIBS} fmt::fmt yaml-cpp tools io auto_aim)
 target_link_libraries(camera_detect_test ${OpenCV_LIBS} fmt::fmt yaml-cpp tools auto_aim io)
 

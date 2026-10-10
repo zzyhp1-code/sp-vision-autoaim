@@ -18,8 +18,8 @@ struct TxPacket_TJ  // lower board -> small computer
 	uint8_t robot_id;           // 3 red, 103 blue, 0 unknown
 	float bullet_speed_TJ;
 	uint16_t bullet_count_TJ;
-	float imu_pitch_TJ;         // rad
-	float imu_yaw_TJ;           // rad
+	float imu_pitch_TJ;         // deg (CH010 native degrees; see firmware/infantry/README.md)
+	float imu_yaw_TJ;           // deg
 	uint16_t crc16_TJ;
 };
 
@@ -48,8 +48,8 @@ public:
 		uint8_t robot_id,
 		float bullet_speed,
 		uint16_t bullet_count,
-		float imu_pitch_rad,
-		float imu_yaw_rad);
+		float imu_pitch_deg,
+		float imu_yaw_deg);
 
 	bool HasFreshCommand(uint32_t now_ms) const;
 	const RxPacket_TJ& LatestCommand() const;

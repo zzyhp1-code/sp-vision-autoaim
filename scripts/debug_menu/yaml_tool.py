@@ -395,7 +395,7 @@ def command_write_fields(args: argparse.Namespace) -> int:
 
 
 def command_write_fields_pair(args: argparse.Namespace) -> int:
-    """将同一候选字段写入两份正式配置，并在任一步失败时恢复两者。"""
+    """写入两份配置；失败时分别恢复，无法恢复的原文保留供人工处理。"""
     target_a = Path(args.config_a).resolve()
     target_b = Path(args.config_b).resolve()
     candidate_path = Path(args.candidate).resolve()
@@ -443,46 +443,45 @@ def command_write_fields_pair(args: argparse.Namespace) -> int:
             prefix=f".{target.name}.", suffix=".rollback", dir=str(target.parent)
         )
         backup = Path(name)
-        with os.fdopen(descriptor, "wb") as handle:
-            handle.write(target.read_bytes())
-            handle.flush()
-            os.fsync(handle.fileno())
-        os.chmod(backup, stat.S_IMODE(target.stat().st_mode))
+        try:
+            with os.fdopen(descriptor, "wb") as handle:
+                handle.write(target.read_bytes())
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.chmod(backup, stat.S_IMODE(target.stat().st_mode))
+        except Exception:
+            backup.unlink(missing_ok=True)
+            raise
         return backup
 
-    temporary_a = temporary_b = backup_a = backup_b = None
-    replaced = False
+    temporaries = []
+    backups = {}
+    complete = False
     try:
-        temporary_a = render_temporary(target_a, yaml_a, data_a)
-        temporary_b = render_temporary(target_b, yaml_b, data_b)
-        backup_a = preserve_original(target_a)
-        backup_b = preserve_original(target_b)
-        os.replace(temporary_a, target_a)
-        temporary_a = None
-        os.replace(temporary_b, target_b)
-        temporary_b = None
-        replaced = True
+        for target, yaml, data in ((target_a, yaml_a, data_a), (target_b, yaml_b, data_b)):
+            temporaries.append(render_temporary(target, yaml, data))
+            backups[target] = preserve_original(target)
+        for temporary, target in zip(temporaries, (target_a, target_b)):
+            os.replace(temporary, target)
         for target in (target_a, target_b):
             _, _, verified = load_yaml(target)
             for key in args.keys:
                 if verified.get(key) != candidate_data[key]:
                     raise MenuYamlError(f"替换后重新解析校验失败：{target.name}:{key}")
-    except Exception:
-        # 回滚文件仅存在于当前写入事务中，成功或失败后都会删除。
-        if backup_a is not None and backup_a.exists():
-            os.replace(backup_a, target_a)
-            backup_a = None
-        if backup_b is not None and backup_b.exists():
-            os.replace(backup_b, target_b)
-            backup_b = None
+        complete = True
+    except Exception as error:
+        failures = []
+        for target, backup in backups.items():
+            try:
+                os.replace(backup, target)
+            except OSError as rollback_error:
+                failures.append(f"{target}；恢复文件：{backup}；原因：{rollback_error}")
+        if failures:
+            raise MenuYamlError(f"写入失败：{error}；回滚未完成：" + "；".join(failures)) from error
         raise
     finally:
-        for path in (temporary_a, temporary_b, backup_a, backup_b):
-            if path is not None and path.exists():
-                path.unlink()
-
-    if not replaced:
-        raise MenuYamlError("双配置写入未完成。")
+        for path in temporaries + (list(backups.values()) if complete else []):
+            path.unlink(missing_ok=True)
     print(f"通过：已一致写入并重新验证 {target_a} 与 {target_b}")
     return 0
 

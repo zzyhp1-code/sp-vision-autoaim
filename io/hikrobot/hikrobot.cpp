@@ -200,25 +200,39 @@ void HikRobot::capture_start()
       cv::Mat rgb_img;
 
       // MVS 4.5 returns an error from MV_CC_ConvertPixelType for BayerRG8.
-      // OpenCV 4.5 has only the ambiguous two-letter Bayer aliases. PFNC BayerRG8
-      // is the four-letter RGGB pattern; RGGB->RGB is aliased to BayerRG2BGR.
-      // The apparently opposite suffix is intentional. Keep the result in RGB.
-      int bayer_to_rgb = -1;
+      // OpenCV 4.5 has only the ambiguous two-letter Bayer aliases, and those
+      // names are *inverted* with respect to the PFNC names used by the SDK:
+      // PFNC BayerRG8 (RGGB pattern) must be converted with COLOR_BayerBG2BGR.
+      // Measured 2026-10-10 on MV-CS060-10UC-PRO (pixel_type=0x1080009):
+      //   raw 2x2 parity means  even/even=12.94  even/odd=9.99  odd/even=10.07  odd/odd=8.53
+      //   => the red sample sits at (even,even) and blue at (odd,odd) => RGGB, as declared.
+      //   COLOR_BayerBG2BGR  -> B=8.69  G=10.09  R=13.10  (correct: banner red, bars blue)
+      //   COLOR_BayerRG2BGR  -> B=13.10 G=10.09  R=8.69   (red/blue swapped)
+      // Keep the result BGR: downstream consumers (YOLO, classifier, get_color) all
+      // treat cv::Mat as BGR, and the previous "RGB" naming was what hid the swap.
+      int bayer_to_bgr = -1;
       switch (raw.stFrameInfo.enPixelType) {
-        case PixelType_Gvsp_BayerGR8: bayer_to_rgb = cv::COLOR_BayerGR2BGR; break;
-        case PixelType_Gvsp_BayerRG8: bayer_to_rgb = cv::COLOR_BayerRG2BGR; break;
-        case PixelType_Gvsp_BayerGB8: bayer_to_rgb = cv::COLOR_BayerGB2BGR; break;
-        case PixelType_Gvsp_BayerBG8: bayer_to_rgb = cv::COLOR_BayerBG2BGR; break;
+        // PFNC BayerGR8 = GRBG pattern -> OpenCV's RGGB-named code
+        case PixelType_Gvsp_BayerGR8: bayer_to_bgr = cv::COLOR_BayerRG2BGR; break;
+        // PFNC BayerRG8 = RGGB pattern -> OpenCV's BGGR-named code
+        case PixelType_Gvsp_BayerRG8: bayer_to_bgr = cv::COLOR_BayerBG2BGR; break;
+        // PFNC BayerGB8 = GBRG pattern -> OpenCV's GRBG-named code
+        case PixelType_Gvsp_BayerGB8: bayer_to_bgr = cv::COLOR_BayerGR2BGR; break;
+        // PFNC BayerBG8 = BGGR pattern -> OpenCV's RGGB-named code
+        case PixelType_Gvsp_BayerBG8: bayer_to_bgr = cv::COLOR_BayerRG2BGR; break;
         default: break;
       }
 
-      if (bayer_to_rgb >= 0) {
+      if (bayer_to_bgr >= 0) {
         cv::Mat raw_img(frame_size, CV_8UC1, raw.pBufAddr);
-        cv::cvtColor(raw_img, rgb_img, bayer_to_rgb);
+        cv::cvtColor(raw_img, rgb_img, bayer_to_bgr);
       } else if (raw.stFrameInfo.enPixelType == PixelType_Gvsp_Mono8) {
         cv::Mat raw_img(frame_size, CV_8UC1, raw.pBufAddr);
-        cv::cvtColor(raw_img, rgb_img, cv::COLOR_GRAY2RGB);
+        cv::cvtColor(raw_img, rgb_img, cv::COLOR_GRAY2BGR);
       } else if (raw.stFrameInfo.enPixelType == PixelType_Gvsp_RGB8_Packed) {
+        cv::Mat raw_img(frame_size, CV_8UC3, raw.pBufAddr);
+        cv::cvtColor(raw_img, rgb_img, cv::COLOR_RGB2BGR);
+      } else if (raw.stFrameInfo.enPixelType == PixelType_Gvsp_BGR8_Packed) {
         cv::Mat raw_img(frame_size, CV_8UC3, raw.pBufAddr);
         rgb_img = raw_img.clone();
       } else {

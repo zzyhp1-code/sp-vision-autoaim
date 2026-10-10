@@ -6,6 +6,8 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <condition_variable>
+#include <deque>
 #include <mutex>
 #include <string>
 #include <thread>
@@ -40,8 +42,8 @@ struct XucTxPacket
   uint8_t robot_id;       // 3 红方, 103 蓝方
   float bullet_speed;     // 弹速 (m/s)
   uint16_t bullet_count;  // 子弹计数
-  float imu_pitch;        // IMU 俯仰角 (rad)
-  float imu_yaw;          // IMU 航向角 (rad)
+  float imu_pitch;        // IMU 俯仰角（线上的单位由 xuc_imu_angle_unit 指定）
+  float imu_yaw;          // IMU 航向角（线上的单位由 xuc_imu_angle_unit 指定）
   uint16_t crc16;         // CRC16（低字节在前）
 };
 #pragma pack(pop)
@@ -52,6 +54,18 @@ static_assert(offsetof(XucTxPacket, crc16) == 18, "XucTxPacket CRC offset must b
 class XucSender
 {
 public:
+  struct ImuPose
+  {
+    std::chrono::steady_clock::time_point timestamp;
+    double yaw = 0.0;
+    double pitch = 0.0;
+    double bracket_ms = 0.0;
+  };
+  // Host receive timestamps, not hardware exposure/IMU timestamps.
+  bool imu_at(std::chrono::steady_clock::time_point timestamp, ImuPose & pose,
+              std::chrono::milliseconds max_gap = std::chrono::milliseconds(30)) const;
+  bool imu_stable_at(std::chrono::steady_clock::time_point timestamp,
+                     std::chrono::milliseconds window, double max_range_rad) const;
   struct FeederFeedback
   {
     bool active = false;
@@ -88,6 +102,7 @@ public:
   {
     return last_shoot_tx_ns_.load(std::memory_order_acquire);
   }
+  // All IMU getters return radians, regardless of the wire feedback unit.
   double imu_pitch() const
   {
     return imu_pitch_sign_ * static_cast<double>(imu_pitch_.load(std::memory_order_relaxed)) +
@@ -98,7 +113,7 @@ public:
     return imu_yaw_sign_ * static_cast<double>(imu_yaw_.load(std::memory_order_relaxed)) +
            imu_yaw_offset_rad_;
   }
-  // Raw lower-board yaw is the only coordinate shared by the command and IMU
+  // Raw lower-board yaw (radians, before sign/offset) is shared by command and IMU
   // fields.  Expose it for the upper yaw tracking loop so that actuator error is
   // never formed by subtracting two differently signed display/world angles.
   double raw_imu_yaw() const
@@ -132,6 +147,7 @@ private:
   bool enabled_ = false;
   double yaw_sign_ = 1.0;     // 目标 yaw 符号
   double pitch_sign_ = -1.0;  // 目标 pitch 符号（与现有 CAN 发送 -command.pitch 一致）
+  double imu_angle_to_rad_ = 1.0;  // Convert wire feedback before any pose/control use.
   double imu_yaw_sign_ = 1.0;
   double imu_pitch_sign_ = 1.0;
   double imu_yaw_offset_rad_ = 0.0;
@@ -158,6 +174,9 @@ private:
   std::atomic<float> imu_pitch_{0.0f};
   std::atomic<float> imu_yaw_{0.0f};
   std::atomic<int64_t> last_shoot_tx_ns_{0};
+  mutable std::mutex imu_history_mutex_;
+  mutable std::condition_variable imu_history_changed_;
+  std::deque<ImuPose> imu_history_;
   mutable std::mutex feeder_feedback_mutex_;
   FeederFeedback feeder_feedback_{};
   std::atomic<uint64_t> rx_bytes_{0};
