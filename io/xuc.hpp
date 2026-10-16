@@ -120,6 +120,13 @@ public:
   {
     return static_cast<double>(imu_yaw_.load(std::memory_order_relaxed));
   }
+  // Raw lower-board pitch (radians, before sign/offset), for symmetry with raw_imu_yaw().
+  // The lower board compares its command target against these raw values, so any tool
+  // that builds an absolute target must use the raw getter on both axes.
+  double raw_imu_pitch() const
+  {
+    return static_cast<double>(imu_pitch_.load(std::memory_order_relaxed));
+  }
   double command_yaw_to_raw(double command_yaw_rad) const
   {
     return yaw_sign_ * command_yaw_rad;
@@ -127,6 +134,12 @@ public:
   double raw_yaw_correction_to_command(double raw_correction_rad) const
   {
     return std::abs(yaw_sign_) > 1e-9 ? raw_correction_rad / yaw_sign_ : 0.0;
+  }
+  // Raw lower-board pitch to command conversion, symmetric with yaw version.
+  // Used by attitude-hold logic to lock pitch at current actual pose.
+  double raw_pitch_correction_to_command(double raw_correction_rad) const
+  {
+    return std::abs(pitch_sign_) > 1e-9 ? raw_correction_rad / pitch_sign_ : 0.0;
   }
   uint64_t rx_bytes() const { return rx_bytes_.load(std::memory_order_relaxed); }
   uint64_t header_candidates() const
@@ -148,6 +161,10 @@ private:
   double yaw_sign_ = 1.0;     // 目标 yaw 符号
   double pitch_sign_ = -1.0;  // 目标 pitch 符号（与现有 CAN 发送 -command.pitch 一致）
   double imu_angle_to_rad_ = 1.0;  // Convert wire feedback before any pose/control use.
+  // 命令方向的线上单位换算：Command 内部一律弧度，帧里按 xuc_command_angle_unit 转换。
+  // 电控 2026-10-12 固件（73ea451）的 xuc.h 明确注释 yaw/pitch 为 deg，
+  // 且直接与 GetAngleYaw()（度）相减，因此必须发度。
+  double command_rad_to_wire_ = 1.0;  // rad → 线上单位（deg 时为 180/π）
   double imu_yaw_sign_ = 1.0;
   double imu_pitch_sign_ = 1.0;
   double imu_yaw_offset_rad_ = 0.0;

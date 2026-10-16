@@ -225,12 +225,21 @@ AimPoint Aimer::choose_aim_point(const Target & target)
     leaving_angle = leaving_angle_;
   }
 
-  // 在小陀螺时，一侧的装甲板不断出现，另一侧的装甲板不断消失，显然前者被打中的概率更高
+  // 在小陀螺时，选弹着时刻 delta_angle 最接近 0 的面。
+  // 注意：choose_aim_point 的 target 已是预测到弹着时刻的副本（aim() 第97-100行），
+  // 所以 delta_angle 直接就是弹着时刻的角度，不需要再额外补偿旋转。
+  int best_id = -1;
+  double best_abs_delta = 1e10;
   for (int i = 0; i < armor_num; i++) {
-    if (std::abs(delta_angle_list[i]) > coming_angle) continue;
-    if (ekf_x[7] > 0 && delta_angle_list[i] < leaving_angle) return {true, armor_xyza_list[i]};
-    if (ekf_x[7] < 0 && delta_angle_list[i] > -leaving_angle) return {true, armor_xyza_list[i]};
+    const double abs_delta = std::abs(delta_angle_list[i]);
+    if (abs_delta > coming_angle) continue;
+    if (abs_delta < best_abs_delta) {
+      best_abs_delta = abs_delta;
+      best_id = i;
+    }
   }
+
+  if (best_id >= 0) return {true, armor_xyza_list[best_id]};
 
   return {false, armor_xyza_list[0]};
 }

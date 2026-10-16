@@ -97,6 +97,19 @@ XucSender::XucSender(const std::string & config_path)
   } else if (imu_angle_unit != "rad") {
     throw std::invalid_argument("xuc_imu_angle_unit must be rad or deg");
   }
+
+  // 命令方向的线上单位。电控 2026-10-12 固件（new_infantry @ 73ea451）的 xuc.h
+  // 明确把 yaw/pitch 标注为 deg，且 RC.cpp 直接与 GetAngleYaw()（度）相减；
+  // 上位机内部一律弧度，因此默认按度发送。缺失该键时默认 deg，与当前固件一致。
+  const std::string command_angle_unit = yaml["xuc_command_angle_unit"]
+    ? yaml["xuc_command_angle_unit"].as<std::string>() : "deg";
+  if (command_angle_unit == "deg") {
+    command_rad_to_wire_ = 180.0 / M_PI;
+  } else if (command_angle_unit == "rad") {
+    command_rad_to_wire_ = 1.0;
+  } else {
+    throw std::invalid_argument("xuc_command_angle_unit must be rad or deg");
+  }
   if (yaml["xuc_yaw_sign"]) yaw_sign_ = yaml["xuc_yaw_sign"].as<double>();
   if (yaml["xuc_pitch_sign"]) pitch_sign_ = yaml["xuc_pitch_sign"].as<double>();
   if (yaml["xuc_imu_yaw_sign"]) imu_yaw_sign_ = yaml["xuc_imu_yaw_sign"].as<double>();
@@ -140,11 +153,11 @@ XucSender::XucSender(const std::string & config_path)
     // 启动接收线程：解析新版 TxPacket_TJ
     recv_thread_ = std::thread([this] { recv_loop(); });
     tools::logger()->info(
-      "[XUC] serial opened {} @ {} baud, command_angles=rad, imu_wire_unit={}, imu_output=rad, yaw_sign={}, pitch_sign={}, "
+      "[XUC] serial opened {} @ {} baud, command_unit={}, imu_wire_unit={}, imu_output=rad, yaw_sign={}, pitch_sign={}, "
       "imu_yaw_sign={}, imu_pitch_sign={}, allow_control={}, allow_shoot={}, "
       "require_feedback={}, require_auto_mode={}, max_yaw_excursion_deg={:.2f}, "
       "lock_pitch={}",
-      port, baud, imu_angle_unit, yaw_sign_, pitch_sign_, imu_yaw_sign_, imu_pitch_sign_, allow_control_,
+      port, baud, command_angle_unit, imu_angle_unit, yaw_sign_, pitch_sign_, imu_yaw_sign_, imu_pitch_sign_, allow_control_,
       allow_shoot_, require_feedback_for_control_, require_auto_mode_for_control_,
       max_yaw_excursion_rad_ * 180.0 / M_PI, lock_pitch_for_control_);
     if (!allow_control_) {
@@ -232,8 +245,10 @@ void XucSender::send(const Command & cmd)
     control_session_active_ = false;
   }
 
-  pkt.yaw = static_cast<float>(target_yaw_raw);
-  pkt.pitch = static_cast<float>(target_pitch_raw);
+  // 内部一律弧度；写帧前按 xuc_command_angle_unit 转成线上单位。
+  // 电控 2026-10-12 固件（73ea451）期望度，直接与 GetAngleYaw()（度）相减。
+  pkt.yaw = static_cast<float>(target_yaw_raw * command_rad_to_wire_);
+  pkt.pitch = static_cast<float>(target_pitch_raw * command_rad_to_wire_);
 
   // CRC16 对前 12 字节计算，低字节在前
   uint16_t crc = tools::get_crc16(reinterpret_cast<const uint8_t *>(&pkt),

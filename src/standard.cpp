@@ -280,6 +280,27 @@ int main(int argc, char * argv[])
     : -1.0;
   const bool xuc_fire_guard_enabled = integration_yaml["xuc_fire_guard_enabled"] &&
     integration_yaml["xuc_fire_guard_enabled"].as<bool>();
+  // 仅用于监控窗口显示"开火总开关是否已解除"；真正生效位置在驱动 io/xuc.cpp。
+  const bool xuc_allow_shoot_configured = integration_yaml["xuc_allow_shoot"] &&
+    integration_yaml["xuc_allow_shoot"].as<bool>();
+  // 2026-10-14 新增：常驻 control 开关。开启后，AUTO 档内目标丢失超短时窗口时，
+  // 保持 control=1（摩擦轮继续转）并锁定当前姿态（云台不动）。
+  const bool xuc_control_persist_enabled = integration_yaml["xuc_control_persist_enabled"] &&
+    integration_yaml["xuc_control_persist_enabled"].as<bool>();
+  // 开火节奏回退间隔（秒）。>0 时不依赖拨弹遥测，改为固定间隔重复开火。
+  // 0 = 保持原遥测模式。见 fire cadence gate 处注释。
+  const double xuc_fire_cadence_fallback_s =
+    integration_yaml["xuc_fire_cadence_fallback_ms"]
+      ? std::clamp(
+          integration_yaml["xuc_fire_cadence_fallback_ms"].as<double>(), 0.0, 5000.0) / 1000.0
+      : 0.0;
+  // 2026-10-14 新增：开火脉冲保持时长（秒）。0 = 关闭（单帧脉冲，原行为）。
+  // >0 时，开火上升沿后把 shoot 维持该时长，使下位机拨弹轮（AUTO 档速度模式）
+  // 获得确定性转动时间。实测单帧约 10ms 不足，一颗弹常需 3~4 次脉冲。
+  const double xuc_shoot_hold_s =
+    integration_yaml["xuc_shoot_hold_ms"]
+      ? std::clamp(integration_yaml["xuc_shoot_hold_ms"].as<double>(), 0.0, 1000.0) / 1000.0
+      : 0.0;
   const double xuc_fire_stable_s = integration_yaml["xuc_fire_stable_ms"]
     ? std::max(0.0, integration_yaml["xuc_fire_stable_ms"].as<double>()) / 1000.0
     : 0.5;
@@ -846,6 +867,17 @@ int main(int argc, char * argv[])
   bool xuc_feeder_active = false;
   uint64_t xuc_feeder_transition_sequence = 0;
   bool xuc_gyro_cadence_hold_logged = false;
+  long xuc_fire_inhibit_count = 0;   // 被拨弹门控拦下的累计次数（监控窗口用）
+  // 【诊断】持续 shoot 模式的计数与结束标记；仅用于 SPV_SHOOT_HOLD_MS 诊断，验收后删除
+  long xuc_shoot_hold_frames = 0;
+  bool xuc_shoot_hold_ended_logged = false;
+  // 最近一次实际开出 shoot=1 的时刻；供“定时回退”节奏门控使用（见 cadence gate）
+  std::chrono::steady_clock::time_point xuc_last_shot_issue_time{};
+  // 开火脉冲保持：xuc_shoot_pulse_active 为真时，把 shoot 维持到 xuc_shoot_pulse_until。
+  // 仅在开火上升沿武装；保持期间的续帧不视为新开火。
+  std::chrono::steady_clock::time_point xuc_shoot_pulse_until{};
+  bool xuc_shoot_pulse_active = false;
+  long xuc_shoot_hold_pulse_count = 0;   // 已武装的脉冲数（监控窗口用）
   std::int64_t event_last_fired_cycle = -1;
   std::chrono::steady_clock::time_point xuc_feeder_last_active;
   uint64_t xuc_next_shot_id = 1;
@@ -1652,9 +1684,35 @@ int main(int argc, char * argv[])
     // hand-over.  Synchronize it to the actual lower-board yaw outside AUTO or
     // on a genuine visual loss, so re-entering AUTO cannot dump a stale target
     // into the inner position loop in one frame.
-    const bool lower_yaw_armed_now = xuc.enabled() && xuc.rx_valid() &&
-      xuc.mode() == static_cast<uint8_t>(io::Mode::auto_aim) &&
-      (xuc.robot_id() & (1U << 6U)) != 0U;
+    // The current protocol carries a robot ID, not the old yaw-arm bitfield.
+    const bool lower_yaw_control_ready = xuc.enabled() && xuc.control_ready() &&
+      xuc.rx_valid() && xuc.mode() == static_cast<uint8_t>(io::Mode::auto_aim);
+
+    // 2026-10-14 新增：常驻 control 保持逻辑。
+    // 触发条件：开关开启 + 下位机 AUTO + 视觉丢失（超短时窗口）。
+    // 行为：保持 control=1（摩擦轮继续转），锁定当前姿态（云台不动）。
+    // 排除：瞄准点无效、弹道无解等其他 control=false 原因。
+    // 安全：退出 AUTO 或链路失效时自动失效（lower_yaw_control_ready 为 false）。
+    const bool can_hold_attitude = lower_yaw_control_ready &&
+      std::isfinite(xuc.raw_imu_yaw()) && std::isfinite(xuc.raw_imu_pitch());
+    const bool visual_lost = targets.empty() && direct_yaw_initialized &&
+      std::chrono::duration<double>(t - direct_yaw_last_measurement).count() >
+        direct_yaw_hold_s;
+    const bool persist_hold_active = xuc_control_persist_enabled &&
+      can_hold_attitude && visual_lost && !command.control;
+    if (persist_hold_active) {
+      command.control = true;
+      command.yaw = xuc.raw_yaw_correction_to_command(xuc.raw_imu_yaw());
+      command.pitch = xuc.raw_pitch_correction_to_command(xuc.raw_imu_pitch());
+      // shoot 由后续 fire_candidate 计算，因 fresh=false 而恒为 false
+      static bool persist_logged = false;
+      if (!persist_logged) {
+        tools::logger()->info(
+          "[XUC][PERSIST] visual lost: holding control, locking attitude");
+        persist_logged = true;
+      }
+    }
+
     if (final_yaw_command_max_rate_rad_s > 0.0 && xuc.enabled()) {
       const auto limiter_now = std::chrono::steady_clock::now();
       const bool actual_yaw_valid = xuc.rx_valid() &&
@@ -1663,7 +1721,7 @@ int main(int argc, char * argv[])
         ? xuc.raw_yaw_correction_to_command(xuc.raw_imu_yaw())
         : 0.0;
 
-      if (!lower_yaw_armed_now || !command.control || !std::isfinite(command.yaw)) {
+      if (!lower_yaw_control_ready || !command.control || !std::isfinite(command.yaw)) {
         if (actual_yaw_valid) {
           final_yaw_command_filtered = actual_command_yaw;
           final_yaw_command_initialized = true;
@@ -1681,6 +1739,8 @@ int main(int argc, char * argv[])
         if (!final_yaw_lower_armed) {
           final_yaw_lower_armed = true;
           final_yaw_command_last_update = limiter_now;
+          tools::logger()->info("[XUC][YAW] final slew limiter active: max_rate={:.1f} deg/s",
+            final_yaw_command_max_rate_rad_s * 180.0 / M_PI);
         }
         const double dt = std::clamp(
           std::chrono::duration<double>(
@@ -1723,22 +1783,45 @@ int main(int argc, char * argv[])
         xuc_one_face_once_fire && gyro_predicted_fire_active;
       const bool predictive_fire_active =
         gyro_predicted_fire_active || vehicle_predicted_fire_active;
+      // 【节奏门控】两种模式：
+      //  (a) 遥测模式（默认，xuc_fire_cadence_fallback_ms == 0）：依赖下位机上报的
+      //      拨弹转速来判定“上一发已结束”。前提是固件已接入 feeder 遥测。
+      //  (b) 定时回退模式（xuc_fire_cadence_fallback_ms > 0）：不依赖拨弹遥测，
+      //      改为“距上次开火至少间隔 N 毫秒”。
+      //      启用原因（2026-10-13 实测）：电控固件把 bullet_speed/bullet_count 写死 0，
+      //      遥测模式下永远等不到拨弹反馈，导致开火被反复 inhibit，实测 30 秒仅 7 发。
+      //      同一实测证明：单帧 shoot=1（约 10 ms）即可触发拨弹动作，故固定间隔可行。
+      const bool cadence_uses_fallback = xuc_fire_cadence_fallback_s > 0.0;
+      const double since_last_shot_s =
+        xuc_last_shot_issue_time.time_since_epoch().count() > 0
+          ? std::chrono::duration<double>(t - xuc_last_shot_issue_time).count()
+          : std::numeric_limits<double>::infinity();
+      const bool cadence_fallback_gate_open =
+        cadence_uses_fallback &&
+        (!xuc_pending_shot && xuc_active_shot_id == 0) &&
+        since_last_shot_s >= xuc_fire_cadence_fallback_s;
       const bool feedback_cadence_gate_open =
-        !xuc.enabled() ||
-        (!xuc_pending_shot && xuc_active_shot_id == 0 &&
-         (!xuc_feeder_activity_seen ||
-          (!xuc_feeder_active &&
-           std::chrono::duration<double>(t - xuc_feeder_last_active).count() >=
-             xuc_gyro_post_feed_recovery_s)));
+        cadence_uses_fallback
+          ? cadence_fallback_gate_open
+          : (!xuc.enabled() ||
+             (!xuc_pending_shot && xuc_active_shot_id == 0 &&
+              (!xuc_feeder_activity_seen ||
+               (!xuc_feeder_active &&
+                std::chrono::duration<double>(t - xuc_feeder_last_active).count() >=
+                  xuc_gyro_post_feed_recovery_s))));
       if (xuc.enabled() && !feedback_cadence_gate_open) {
+        ++xuc_fire_inhibit_count;   // 供监控窗口统计“被拨弹门控拦下”的次数
         if (!xuc_gyro_cadence_hold_logged) {
           tools::logger()->info(
-            "[XUC][FIRE] request inhibited until feeder is available");
+            "[XUC][FIRE] request inhibited until {}",
+            cadence_uses_fallback ? "cadence fallback interval elapses"
+                                  : "feeder is available");
           xuc_gyro_cadence_hold_logged = true;
         }
       } else if (xuc_gyro_cadence_hold_logged) {
         tools::logger()->info(
-          "[XUC][FIRE] feeder available; fresh qualification required");
+          "[XUC][FIRE] {} available; fresh qualification required",
+          cadence_uses_fallback ? "cadence fallback" : "feeder");
         xuc_gyro_cadence_hold_logged = false;
       }
       if (predictive_fire_active && native_prediction_valid) {
@@ -2130,13 +2213,39 @@ int main(int argc, char * argv[])
       if (measurement_fallback) command.shoot = false;
     }
 
+    // 开火请求计数与显示：把"上位机决定开火"的次数与当前帧状态打到监控窗口。
+    // 用途：试射时直接看到开火请求有没有发出去、发了多少次，以及被哪一级门控拦下。
+    // 注意：这只是上位机的决策计数，不代表下位机真的拨弹（下位机 AUTOAIM 分支
+    // 目前不驱动拨弹机构，且射手遥测未接入）。
+    {
+      static long shoot_request_count = 0;
+      static long shoot_frames_total = 0;
+      static auto last_shoot_print = std::chrono::steady_clock::now();
+      ++shoot_frames_total;
+      if (command.shoot) ++shoot_request_count;
+      const auto now_print = std::chrono::steady_clock::now();
+      if (!competition_headless &&
+          std::chrono::duration<double>(now_print - last_shoot_print).count() >= 0.25) {
+        last_shoot_print = now_print;
+        fmt::print(
+          "[SHOOT] 本帧 shoot={}  control={}  累计开火请求={}  被节奏门控拦下={}  帧={}  "
+          "允许开火(配置)={} 稳定门(ms)={:.0f}  脉冲保持(ms)={:.0f}/{}  节奏={}\n",
+          command.shoot ? 1 : 0, command.control ? 1 : 0, shoot_request_count,
+          xuc_fire_inhibit_count, shoot_frames_total, xuc_allow_shoot_configured ? 1 : 0,
+          xuc_fire_stable_s * 1000.0, xuc_shoot_hold_s * 1000.0,
+          xuc_shoot_hold_pulse_count,
+          cadence_uses_fallback ? fmt::format("定时 {:.0f}ms", xuc_fire_cadence_fallback_s * 1000.0)
+                                : std::string("遥测"));
+      }
+    }
+
     // Final actuator tracking layer.  Form the error before adding PI output so
     // the integrator converges to the extra command needed to make actual raw IMU
     // yaw follow the ESKF/direct-guard reference instead of chasing its own
     // boosted output.  Reset on loss/exit to prevent stale wind-up at reacquire.
     double yaw_tracking_error_raw_rad = NAN;
     double yaw_tracking_output_raw_rad = 0.0;
-    if (!lower_yaw_armed_now) {
+    if (!lower_yaw_control_ready) {
       // The vision pipeline continues producing targets while the RC switch is
       // outside AUTO.  Never integrate that physically untrackable error and
       // then dump it into the gimbal on the AUTO edge.
@@ -2151,7 +2260,7 @@ int main(int argc, char * argv[])
       yaw_tracking_initialized = true;
     }
 
-    if (yaw_tracking_pi_enabled && lower_yaw_armed_now &&
+    if (yaw_tracking_pi_enabled && lower_yaw_control_ready &&
         yaw_tracking_lower_armed && xuc.rx_valid() && command.control &&
         std::isfinite(command.yaw)) {
       const auto pi_now = std::chrono::steady_clock::now();
@@ -2205,7 +2314,7 @@ int main(int argc, char * argv[])
     } else {
       yaw_tracking_integral_raw_rad = 0.0;
       yaw_tracking_initialized = false;
-      if (!lower_yaw_armed_now) yaw_tracking_lower_armed = false;
+      if (!lower_yaw_control_ready) yaw_tracking_lower_armed = false;
     }
 
     // Dry-run diagnostics: world-coordinate stability and final command.
@@ -2321,9 +2430,11 @@ int main(int argc, char * argv[])
     // Attach a software shot id to every pulse actually sent.  The next feeder
     // rising edge closes the command-to-feeder timing measurement; it is not
     // treated as projectile muzzle time.
+    bool shot_rising_edge_this_frame = false;
     if (xuc.enabled() && command.shoot) {
       const auto issue_time = std::chrono::steady_clock::now();
       const uint64_t shot_id = xuc_next_shot_id++;
+      shot_rising_edge_this_frame = true;
       if (xuc_pending_shot) {
         tools::logger()->warn(
           "[SHOT] id={} superseded_without_feedback by={}",
@@ -2332,6 +2443,13 @@ int main(int argc, char * argv[])
       xuc_pending_shot = true;
       xuc_pending_shot_id = shot_id;
       xuc_pending_shot_time = issue_time;
+      // 武装开火脉冲保持：本发 shoot 将维持到该时刻
+      if (xuc_shoot_hold_s > 0.0) {
+        xuc_shoot_pulse_until = issue_time + std::chrono::milliseconds(
+          static_cast<int>(xuc_shoot_hold_s * 1000.0 + 0.5));
+        xuc_shoot_pulse_active = true;
+        ++xuc_shoot_hold_pulse_count;
+      }
       const double processing_age_ms =
         std::chrono::duration<double, std::milli>(issue_time - t).count();
       tools::logger()->info(
@@ -2417,8 +2535,68 @@ int main(int argc, char * argv[])
     // 这样下一次循环时，会先发送这个命令，然后才读取相机
     // 形成闭环：发送命令 → 电控触发相机 → 读取图像 → 处理 → 发送下一条命令
     if (xuc.enabled()) {
+      // 【诊断模式】持续 shoot：SPV_SHOOT_HOLD_MS 指定时长内无视算法决策，强制
+      // shoot=1 连续下发。用途：电控反馈“shoot 只有一帧、持续极短，拨弹轮没动”，
+      // 需要区分“指令太短”还是“下位机不执行”。
+      // 用法：SPV_SHOOT_HOLD_MS=3000 ./build/standard -c=configs/standard.yaml
+      // 安全：仍要求 xuc.allow_shoot（驱动内部开关）与 control=1，且只在持续时间
+      // 内生效；结束时自动恢复算法决策。仅诊断用，验收后应删除。
+      static const int shoot_hold_ms = [] {
+        const char * env = std::getenv("SPV_SHOOT_HOLD_MS");
+        return env ? std::clamp(std::atoi(env), 0, 30000) : 0;
+      }();
+      static const auto shoot_hold_deadline =
+        std::chrono::steady_clock::now() + std::chrono::milliseconds(shoot_hold_ms);
+      const bool shoot_hold_active =
+        shoot_hold_ms > 0 &&
+        std::chrono::steady_clock::now() < shoot_hold_deadline &&
+        command.control && xuc_allow_shoot_configured;
+      if (shoot_hold_active) {
+        static bool hold_logged = false;
+        if (!hold_logged) {
+          tools::logger()->warn(
+            "[SHOOT-HOLD] 持续 shoot 诊断模式启动：{} ms 内强制 shoot=1（要求 control=1）",
+            shoot_hold_ms);
+          hold_logged = true;
+        }
+        command.shoot = true;
+        ++xuc_shoot_hold_frames;
+        static auto last_hold_print = std::chrono::steady_clock::now();
+        const auto hold_now = std::chrono::steady_clock::now();
+        if (std::chrono::duration<double>(hold_now - last_hold_print).count() >= 0.5) {
+          last_hold_print = hold_now;
+          fmt::print(
+            "[SHOOT-HOLD] 持续下发中：帧={} 剩余={:.1f}s\n", xuc_shoot_hold_frames,
+            std::chrono::duration<double>(shoot_hold_deadline - hold_now).count());
+        }
+      } else if (shoot_hold_ms > 0 && xuc_shoot_hold_frames > 0 &&
+                 !xuc_shoot_hold_ended_logged) {
+        tools::logger()->warn(
+          "[SHOOT-HOLD] 持续 shoot 结束：共下发 {} 帧（{} ms）", xuc_shoot_hold_frames,
+          shoot_hold_ms);
+        xuc_shoot_hold_ended_logged = true;
+      }
+      // 2026-10-14 新增：开火脉冲保持。把上升沿的单帧 shoot 延长到配置时长，
+      // 使下位机拨弹轮（AUTO 档速度模式）有足够且确定的时间转过一个弹位。
+      // 安全：仍要求 control=1 与配置允许开火；退出 AUTO 或链路失效自动结束。
+      if (xuc_shoot_hold_s > 0.0 && xuc_shoot_pulse_active) {
+        if (std::chrono::steady_clock::now() < xuc_shoot_pulse_until &&
+            command.control && xuc_allow_shoot_configured) {
+          command.shoot = true;
+        } else {
+          xuc_shoot_pulse_active = false;
+        }
+      }
       xuc.send(command);
-      if (command.shoot) {
+      // 节奏时刻只在**上升沿**更新：保持期间的续帧不得刷新它，
+      // 否则 cadence 门控会被无限推迟（实测会退化成死锁）。
+      if (shot_rising_edge_this_frame) {
+        xuc_last_shot_issue_time = std::chrono::steady_clock::now();
+      }
+      // 定时回退模式下同样不记录 pending：该模式不依赖拨弹反馈，
+      // 若记录 pending 会因遥测为 0 而超时循环，反而阻塞节奏。诊断模式同理。
+      if (shot_rising_edge_this_frame && !shoot_hold_active &&
+          xuc_fire_cadence_fallback_s <= 0.0) {
         const int64_t tx_ns = xuc.last_shoot_tx_ns();
         if (tx_ns > 0) {
           xuc_pending_shot_time = std::chrono::steady_clock::time_point(

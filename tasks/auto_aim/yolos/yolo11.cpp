@@ -153,7 +153,7 @@ YOLO11::YOLO11(const std::string & config_path, bool debug)
         .set_element_type(ov::element::u8)
         .set_shape({1, 640, 640, 3})
         .set_layout("NHWC")
-        .set_color_format(ov::preprocess::ColorFormat::RGB);
+        .set_color_format(ov::preprocess::ColorFormat::BGR);
 
     input.model().set_layout("NCHW");
 

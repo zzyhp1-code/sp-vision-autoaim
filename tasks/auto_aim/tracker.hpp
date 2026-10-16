@@ -79,6 +79,10 @@ private:
   int batch_max_observations_;
   double batch_min_omega_rad_s_;
   int target_switch_min_frames_ = 3;
+  // 发散判定需连续多少帧才真正确认丢失。1 = 单帧即判丢（原行为）。
+  // 提高该值可避免目标快速移动时的单帧 EKF 抖动直接导致跟丢。
+  int diverge_confirm_frames_ = 3;
+  int diverge_streak_ = 0;
   ArmorName switch_candidate_name_ = ArmorName::not_armor;
   int switch_candidate_frames_ = 0;
   YawESKF::Config yaw_eskf_config_;

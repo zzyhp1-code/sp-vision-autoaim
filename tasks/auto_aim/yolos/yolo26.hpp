@@ -62,7 +62,7 @@ private:
   ov::InferRequest infer_request_;  // 同步模式只需1个InferRequest
 
   // 预分配的输入图像和tensor，避免每帧重新分配
-  cv::Mat input_image_;       // 640x640 RGB图像
+  cv::Mat input_image_;       // 640x640 BGR图像；仅在推理入口转换为 RGB
   ov::Tensor input_tensor_;   // 预绑定的tensor
 
   cv::Rect roi_;

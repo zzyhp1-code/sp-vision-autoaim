@@ -99,6 +99,11 @@ Tracker::Tracker(const std::string & config_path, Solver & solver)
   if (yaml["whole_state_iekf_huber_threshold"])
     iterated_update_config_.huber_threshold = std::clamp(
       yaml["whole_state_iekf_huber_threshold"].as<double>(), 0.5, 10.0);
+  // 发散确认帧数：目标快速移动时单帧 EKF 半径抖动不应立即判丢。
+  if (yaml["tracker_diverge_confirm_frames"]) {
+    diverge_confirm_frames_ = std::clamp(
+      yaml["tracker_diverge_confirm_frames"].as<int>(), 1, 100);
+  }
 }
 
 std::string Tracker::state() const { return state_; }
@@ -161,11 +166,22 @@ std::list<Target> Tracker::track(
 
   state_machine(found);
 
-  // 发散检测
+  // 发散检测（连续 diverge_confirm_frames_ 帧才确认丢失，避免单帧抖动跟丢）
   if (state_ != "lost" && target_.diverged()) {
-    tools::logger()->debug("[Tracker] Target diverged!");
-    state_ = "lost";
-    return {};
+    ++diverge_streak_;
+    if (diverge_streak_ >= diverge_confirm_frames_) {
+      tools::logger()->debug(
+        "[Tracker] Target diverged! ({}/{} consecutive frames)",
+        diverge_streak_, diverge_confirm_frames_);
+      state_ = "lost";
+      diverge_streak_ = 0;
+      return {};
+    }
+    tools::logger()->debug(
+      "[Tracker] Target diverged {}/{}; holding target", diverge_streak_,
+      diverge_confirm_frames_);
+  } else if (state_ != "lost") {
+    diverge_streak_ = 0;   // 恢复正常即清零
   }
   // 收敛效果检测：
   if (
@@ -269,11 +285,22 @@ std::tuple<omniperception::DetectionResult, std::list<Target>> Tracker::track(
   // 更新状态机
   state_machine(found);
 
-  // 发散检测
+  // 发散检测（连续 diverge_confirm_frames_ 帧才确认丢失，避免单帧抖动跟丢）
   if (state_ != "lost" && target_.diverged()) {
-    tools::logger()->debug("[Tracker] Target diverged!");
-    state_ = "lost";
-    return {switch_target, {}};  // 返回switch_target和空的targets
+    ++diverge_streak_;
+    if (diverge_streak_ >= diverge_confirm_frames_) {
+      tools::logger()->debug(
+        "[Tracker] Target diverged! ({}/{} consecutive frames)",
+        diverge_streak_, diverge_confirm_frames_);
+      state_ = "lost";
+      diverge_streak_ = 0;
+      return {switch_target, {}};  // 返回switch_target和空的targets
+    }
+    tools::logger()->debug(
+      "[Tracker] Target diverged {}/{}; holding target", diverge_streak_,
+      diverge_confirm_frames_);
+  } else if (state_ != "lost") {
+    diverge_streak_ = 0;
   }
 
   if (state_ == "lost") return {switch_target, {}};  // 返回switch_target和空的targets

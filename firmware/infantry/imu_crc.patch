@@ -1,0 +1,61 @@
+--- a/STM32F405/imu.cpp
++++ b/STM32F405/imu.cpp
+@@ -85,12 +85,12 @@
+ 				continue;
+ 
+ 			crc = 0;
+-			const bool crc_ok = Check(frame + 6, data_len, frame_crc);
++			const bool crc_ok = Check(frame, static_cast<uint16_t>(total_len), frame_crc);
+ 			crc = 0;
+ 			if (!crc_ok)
+ 			{
+ 				++m_err_count;
+-				if (frame[6] != 0x91) continue;      // 不是姿态帧才跳过
++				continue; // Never accept a frame whose CRC failed.
+ 			}
+ 
+ 			if (frame[6] == 0x91)
+@@ -161,28 +161,26 @@
+ 	}
+ 	else if (type == CH010 || type == HI226)
+ 	{
++		if (pdata == nullptr || len < 6U) return false;
++		const uint16_t payload_len = static_cast<uint16_t>(pdata[2]) |
++			(static_cast<uint16_t>(pdata[3]) << 8U);
++		if (static_cast<uint32_t>(payload_len) + 6U != len) return false;
++		// Cover header + length + payload, skipping CRC bytes at offsets 4 and 5.
++		uint16_t calculated = 0U;
+ 		for (uint16_t j = 0; j < len; ++j)
+ 		{
+-			uint32_t i;
+-			uint32_t byte = pdata[j];
+-			crc ^= byte << 8;
+-			for (i = 0; i < 8; ++i)
++			if (j == 4U || j == 5U) continue;
++			calculated ^= static_cast<uint16_t>(pdata[j]) << 8U;
++			for (uint8_t i = 0; i < 8U; ++i)
+ 			{
+-				uint32_t temp = crc << 1;
+-				if (crc & 0x8000)
+-				{
+-					temp ^= 0x1021;
+-				}
+-				crc = temp;
++				calculated = static_cast<uint16_t>((calculated & 0x8000U)
++					? ((calculated << 1U) ^ 0x1021U) : (calculated << 1U));
+ 			}
+ 		}
+-
+-		// ↓↓↓ 第 4 项的核心：兼容 CRC 高低字节相反 ↓↓↓
+-		crc_calc = (uint16_t)(crc & 0xFFFFU);                     // 本地算出的 CRC
+-		crc_recv = (uint16_t)(com & 0xFFFFU);                     // 帧内读到的 CRC
+-		const uint16_t crc_recv_swap = (uint16_t)((crc_recv >> 8) | (crc_recv << 8));
+-		return (crc_calc == crc_recv) || (crc_calc == crc_recv_swap);
+-		// ↑↑↑ 正常匹配 或 字节交换后匹配，都算通过 ↑↑↑
++		crc_calc = calculated;
++		crc = calculated;
++		crc_recv = static_cast<uint16_t>(com);
++		return crc_calc == crc_recv;
+ 	}
+ 	return false;
+ }

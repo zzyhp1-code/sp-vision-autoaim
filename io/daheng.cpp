@@ -198,7 +198,7 @@ void Daheng::open()
     unsigned char * image_buffer = new unsigned char[payload_size_];
 
     // 预分配输出图像，避免每帧分配内存
-    cv::Mat rgb_img(height_, width_, CV_8UC3);
+    cv::Mat bgr_img(height_, width_, CV_8UC3);
 
     while (!quit_ && ok_) {
       GX_FRAME_DATA frame_data;
@@ -209,13 +209,16 @@ void Daheng::open()
       if (status == GX_STATUS_SUCCESS && frame_data.nStatus == GX_FRAME_STATUS_SUCCESS) {
         // 🚀 优化：使用OpenCV的Bayer转换替代大恒SDK的DxRaw8toRGB24Ex
         // OpenCV的cvtColor经过SIMD优化(AVX2/NEON)，比SDK实现更快
-        // 注意：大恒BAYERRG对应OpenCV的COLOR_BayerBG2RGB（命名规则不同）
+        // PFNC Bayer order differs from OpenCV's two-letter aliases; output BGR.
+        static const int bayer_to_bgr[] = {
+          cv::COLOR_BayerBG2BGR, cv::COLOR_BayerGB2BGR,
+          cv::COLOR_BayerGR2BGR, cv::COLOR_BayerRG2BGR};
         cv::Mat bayer_img(height_, width_, CV_8UC1, frame_data.pImgBuf);
-        cv::cvtColor(bayer_img, rgb_img, cv::COLOR_BayerBG2RGB);
+        cv::cvtColor(bayer_img, bgr_img, bayer_to_bgr[bayer_format_index_]);
 
         // 🚀 优化：直接clone避免中间buffer的memcpy
         CameraData data;
-        data.img = rgb_img.clone();  // clone比memcpy更高效（考虑对齐）
+        data.img = bgr_img.clone();  // clone比memcpy更高效（考虑对齐）
         data.timestamp = std::chrono::steady_clock::now();
         data.frame_id = frame_data.nFrameID;
         queue_.push(data);
@@ -432,9 +435,16 @@ void Daheng::set_camera_params()
     if (status == GX_STATUS_SUCCESS) { chosen = i; break; }
   }
   if (chosen == -1) {
-    if (debug_) tools::logger()->warn("Failed to set any Bayer8 pixel format");
-    // keep default from camera
-  } else if (debug_) {
+    int64_t actual_format = 0;
+    if (GXGetEnum(device_handle_, GX_ENUM_PIXEL_FORMAT, &actual_format) == GX_STATUS_SUCCESS) {
+      for (int i = 0; i < 4; ++i) {
+        if (actual_format == try_formats[i]) { chosen = i; break; }
+      }
+    }
+    if (chosen == -1) throw std::runtime_error("Daheng requires a supported Bayer8 pixel format");
+  }
+  bayer_format_index_ = chosen;
+  if (debug_) {
     tools::logger()->info("Pixel format set to {}", fmt_names[chosen]);
   }
 

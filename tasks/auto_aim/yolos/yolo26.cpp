@@ -216,16 +216,17 @@ YOLO26::YOLO26(const std::string & config_path, bool debug)
   ov::preprocess::PrePostProcessor ppp(model);
   auto & input = ppp.input();
 
-  // 🚀 优化3: 配置输入为RGB U8格式，利用OpenVINO的硬件加速预处理
+  // Camera/host tensor is BGR; the exported model requests reversed input channels.
   input.tensor()
     .set_element_type(ov::element::u8)
     .set_shape({1, 640, 640, 3})
     .set_layout("NHWC")
-    .set_color_format(ov::preprocess::ColorFormat::RGB);
+    .set_color_format(ov::preprocess::ColorFormat::BGR);
 
   input.model().set_layout("NCHW");
 
   input.preprocess()
+    .convert_color(ov::preprocess::ColorFormat::RGB)
     .convert_element_type(ov::element::f32)
     .scale(255.0);
 
