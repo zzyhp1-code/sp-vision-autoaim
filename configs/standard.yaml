@@ -131,7 +131,7 @@ outpost_max_temp_lost_count: 75
 
 #####-----Aimer（瞄准器）参数-----#####
 yaw_offset: 0.0  # 动态视觉跟随以测量中心为零；避免静态偏置被计入预测超前量
-pitch_offset: 6
+pitch_offset: 3.5
 
 comming_angle: 60
 leaving_angle: 20
@@ -139,8 +139,8 @@ leaving_angle: 20
 decision_speed: 0.8
 # Field feedback explicitly selected an 85 ms command-to-impact prediction.
 # Keep high- and low-speed prediction on the same physical calibration.
-high_speed_delay_time: 0.085
-low_speed_delay_time: 0.085
+high_speed_delay_time: 0.1
+low_speed_delay_time: 0.1
 
 actuation_delay_ms: 0
 
@@ -287,13 +287,15 @@ xuc_gyro_post_feed_recovery_ms: 550.0
 # 遥测模式下永远等不到拨弹反馈，开火被反复 inhibit（30 秒仅 7 发）；
 # 同一次实测已证明单帧 shoot=1（约 10ms）即可触发拨弹动作，故固定间隔可行。
 # 200 ms 是保守起步值（约 5 发/秒上限）；确认机构能跟上后再逐步下调。
-xuc_fire_cadence_fallback_ms: 200.0
+# 2026-10-17 现场评估瞄准精度时改为 1500 ms：连发太快难以分辨单发弹着，
+# 拉长到 1.5 s 后每发清晰可辨（首发不受影响，since_last_shot 初值为无穷大）。
+xuc_fire_cadence_fallback_ms: 1500.0
 # 开火脉冲保持时长（毫秒）。0 = 关闭（单帧脉冲，原行为）。
 # >0 时，开火上升沿后把 shoot 维持该时长，使下位机 AUTO 档（速度模式）拨弹轮
 # 获得确定性转动时间。实测单帧约 10ms 不足，一颗弹常需 3~4 次脉冲才能推入入口。
 # 拨弹完成约需 40~180ms，建议从 120~150ms 起步，按实际出弹情况微调。
 # 2026-10-15 现场调参中（130ms）。
-xuc_shoot_hold_ms: 130.0
+xuc_shoot_hold_ms: 80.0
 # At ~5 rad/s and 60 FPS the same armor advances ~5 deg/frame; a four-armor
 # identity switch is ~90 deg. Restart the two-frame window on a large phase jump.
 xuc_gyro_candidate_max_phase_step_deg: 20.0
@@ -308,6 +310,18 @@ xuc_yaw_tracking_output_limit_deg: 0.8  # cannot excite the inner loop or replac
 xuc_yaw_tracking_integrate_error_limit_deg: 1.5  # reject face hand-over and prediction jumps
 xuc_yaw_tracking_arm_dwell_ms: 600.0    # start from zero only after mode=1 and yaw_armed=1 are stable
 xuc_max_prediction_lead_rad: 0.10472     # 移动靶最多超前6°；保留测量守卫，禁止EKF发散越界
+# 车体中心跟随（center_follow）只跟旋转中心，用于消除换面跳变。
+# 注意：车体绕自身中心自转 ⇒ 中心不平移 ⇒ **不欠 omega*flight_time 的提前量**
+# （装甲板相对中心只偏 atan(r/d)≈2.3°，而 omega*flight_time 约 21°，大一个数量级，
+#  直接加会把云台推出装甲板）。真正会滞后的是"中心估计"本身：它是短窗拟合值。
+# 开启后按中心自身横向速度前推飞行时间再取方位差，包络远小于 atan(r/d)。
+# 2026-10-18 加入，默认 false —— 需现场跑一轮确认有效再启用。
+xuc_center_follow_lead_enabled: false
+# 中心横向速度低于此值视为"原地自转"，不欠提前量，避免给静止靶注入噪声。
+xuc_center_follow_lead_min_center_speed_mps: 0.30
+# 修正包络（度）。必须远小于 atan(r/d)≈3.3°（r=0.26,d=4.5），否则会把云台推离装甲板。
+# C++ 侧硬钳 5°。
+xuc_center_follow_lead_max_deg: 3.0
 xuc_direct_yaw_filter_tau_ms: 60.0       # suppress face/model hand-over command oscillation
 xuc_direct_yaw_hold_ms: 300.0            # 移动靶短丢帧继续使用6°内有界预测；更长丢失停控
 xuc_direct_yaw_max_rate_dps: 90.0        # bounded command slew prevents sudden gimbal reversal
@@ -317,7 +331,7 @@ xuc_direct_pitch_filter_tau_ms: 60.0     # retain post-shot noise damping withou
 xuc_direct_pitch_hold_ms: 180.0          # 已保存双轴验收值：短丢帧保持
 xuc_direct_pitch_max_rate_dps: 45.0      # midpoint between the stable-but-slow 25 and previously validated 80 deg/s
 xuc_direct_pitch_error_gain: 1.35        # recover steady-state authority; below the previously validated 1.65 gain
-xuc_projectile_speed_mps: 17.3           # 2026-10-16 实测（测速文件）：摩擦轮降速后弹速 17.3 m/s
+xuc_projectile_speed_mps: 19           # 2026-10-16 实测（测速文件）：摩擦轮降速后弹速 17.3 m/s
 xuc_ballistic_reference_projectile_speed_mps: 10.0  # 0.91m/17cm实弹基准采集于2500rpm，禁止随当前转速重算
 xuc_ballistic_pitch_enabled: true
 xuc_camera_forward_of_muzzle_m: 0.06     # 实测：相机中心在炮口前方 6 cm

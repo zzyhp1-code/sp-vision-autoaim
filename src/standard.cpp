@@ -20,6 +20,7 @@
 #include "io/cboard.hpp"
 #include "io/xuc.hpp"
 #include "tasks/auto_aim/aimer.hpp"
+#include "tasks/auto_aim/center_follow_lead.hpp"
 #include "tasks/auto_aim/gyro_face_selector.hpp"
 #include "tasks/auto_aim/gyro_phase_scheduler.hpp"
 #include "tasks/auto_aim/robust_range_filter.hpp"
@@ -105,6 +106,32 @@ int main(int argc, char * argv[])
           0.0, integration_yaml["xuc_final_yaw_command_max_rate_dps"].as<double>()) *
           M_PI / 180.0
       : 0.0;
+  // Vehicle-centre follow deliberately tracks the rotation centre instead of the
+  // visible plate, which removes plate-to-plate stepping.  A spinning vehicle
+  // turns about its own centre, so that costs no ballistic lead at all; what can
+  // lag is the centre estimate itself when the centre is genuinely translating.
+  // When enabled, advance the centre by its own velocity over the flight time.
+  const bool center_follow_lead_enabled =
+    integration_yaml["xuc_center_follow_lead_enabled"] &&
+    integration_yaml["xuc_center_follow_lead_enabled"].as<bool>();
+  // Below this centre speed the vehicle is treated as spinning in place, where
+  // the geometry owes no lead and a correction would only add noise.
+  const double xuc_center_follow_lead_min_center_speed_mps =
+    integration_yaml["xuc_center_follow_lead_min_center_speed_mps"]
+      ? std::max(0.0,
+          integration_yaml["xuc_center_follow_lead_min_center_speed_mps"].as<double>())
+      : 0.30;
+  // The armour sits only atan(r / d) off the centre bearing (~2.3 deg at
+  // r = 0.26 m, d = 4.5 m), so the correction must stay well inside that.
+  // Anything larger commands the gimbal off the plate instead of onto it; in
+  // particular omega * flight_time (~21 deg) is roughly an order of magnitude
+  // too large and is not a valid lead for a body rotating about its centre.
+  const double center_follow_lead_max_rad =
+    integration_yaml["xuc_center_follow_lead_max_deg"]
+      ? std::clamp(
+          integration_yaml["xuc_center_follow_lead_max_deg"].as<double>(),
+          0.0, 5.0) * M_PI / 180.0
+      : 3.0 * M_PI / 180.0;
   // Keep the fixed camera/gimbal boresight zero separate from the empirical
   // impact correction.  The former centers the visual line of sight; the latter
   // deliberately leaves the armor off-centre so the bore, not the camera, points
@@ -1178,6 +1205,11 @@ int main(int argc, char * argv[])
     double gyro_body_phase_rad = NAN;
     double gyro_omega_rad_s = 0.0;
     double gyro_radius_m = 0.0;
+    double gyro_center_velocity_mps = 0.0;
+    double center_x_m = 0.0;
+    double center_y_m = 0.0;
+    double center_vx_mps = 0.0;
+    double center_vy_mps = 0.0;
     if (!targets.empty()) {
       auto & tracked_target = targets.front();
       tracker_converged = tracked_target.convergened();
@@ -1188,6 +1220,14 @@ int main(int argc, char * argv[])
         gyro_body_phase_rad = tracked_x[6];
         gyro_omega_rad_s = tracked_x[7];
         gyro_radius_m = tracked_x[8];
+        // Centre position/velocity in the world frame.  Used to distinguish
+        // "the vehicle is merely spinning about a fixed centre" (no lead is
+        // owed) from "the centre is actually translating" (a lead is owed).
+        center_x_m = tracked_x[0];
+        center_y_m = tracked_x[2];
+        center_vx_mps = tracked_x[1];
+        center_vy_mps = tracked_x[3];
+        gyro_center_velocity_mps = std::hypot(center_vx_mps, center_vy_mps);
       }
       static int yaw_eskf_log_counter = 0;
       if (++yaw_eskf_log_counter % 50 == 0) {
@@ -1419,6 +1459,10 @@ int main(int argc, char * argv[])
     double ballistic_pitch_compensation_rad = 0.0;
     double ballistic_camera_range_m = NAN;
     double ballistic_total_holdover_m = 0.0;
+    // Impact-time yaw lead actually applied on top of vehicle-centre follow.
+    // Kept as a frame-local diagnostic so the field log can prove whether the
+    // lead was commanded and whether it sat at its envelope.
+    double center_command_lead_rad = 0.0;
     // A newly constructed tracker returns provisional targets before its
     // normal convergence window.  Keep those detections visible, but never let
     // a one-frame pose regain actuator authority after a genuine track loss.
@@ -1494,9 +1538,35 @@ int main(int argc, char * argv[])
           // In every rotating-target mode the visible plate bearing oscillates
           // around the vehicle. Following the EKF rotation center avoids
           // switching the gimbal at each of the four plate hand-overs.
-          command.yaw = std::remainder(
+          double center_command = std::remainder(
             direct_yaw_filtered + direct_yaw_command_correction_rad,
             2.0 * M_PI);
+          if (center_follow_lead_enabled && gyro_radius_m > 0.05 &&
+              std::isfinite(robust_target_range_m) && robust_target_range_m > 0.10) {
+            // A spinning vehicle turns about its own centre, so the centre does
+            // not translate and there is NO omega * flight_time lead to add:
+            // the armour sits at only atan(r/d) off the centre bearing (~2 deg).
+            // What does lag is the centre estimate itself, which is fitted from
+            // a short recent window.  Advance the centre by its own lateral
+            // velocity over the flight time and correct toward that bearing.
+            const double center_flight_time_s =
+              robust_target_range_m / xuc_projectile_speed_mps;
+            const bool center_translating =
+              gyro_center_velocity_mps > xuc_center_follow_lead_min_center_speed_mps;
+            if (center_translating) {
+              const double predicted_cx =
+                center_x_m + center_vx_mps * center_flight_time_s;
+              const double predicted_cy =
+                center_y_m + center_vy_mps * center_flight_time_s;
+              center_command_lead_rad = auto_aim::center_follow_lead_rad(
+                auto_aim::center_azimuth_rad(predicted_cx, predicted_cy),
+                auto_aim::center_azimuth_rad(center_x_m, center_y_m),
+                center_follow_lead_max_rad);
+              center_command = std::remainder(
+                center_command + center_command_lead_rad, 2.0 * M_PI);
+            }
+          }
+          command.yaw = center_command;
         } else if (prediction_lead_limit_configured && native_prediction_trusted) {
           const double prediction_lead =
             std::remainder(native_predicted_yaw - measured_yaw, 2.0 * M_PI);
@@ -2234,7 +2304,7 @@ int main(int argc, char * argv[])
           xuc_fire_inhibit_count, shoot_frames_total, xuc_allow_shoot_configured ? 1 : 0,
           xuc_fire_stable_s * 1000.0, xuc_shoot_hold_s * 1000.0,
           xuc_shoot_hold_pulse_count,
-          cadence_uses_fallback ? fmt::format("定时 {:.0f}ms", xuc_fire_cadence_fallback_s * 1000.0)
+          xuc_fire_cadence_fallback_s > 0.0 ? fmt::format("定时 {:.0f}ms", xuc_fire_cadence_fallback_s * 1000.0)
                                 : std::string("遥测"));
       }
     }
@@ -2361,6 +2431,7 @@ int main(int argc, char * argv[])
             "gimbal_deg=({:.2f},{:.2f}) "
             "armor_y_px={:.1f} pixel_error_deg=({:.2f},{:.2f}) "
             "ballistic=(range={:.3f}m holdover={:.3f}m comp={:.2f}deg residual={:.2f}deg) "
+            "center_lead={:.2f}deg center_follow={} "
             "q_wxyz=({:.6f},{:.6f},{:.6f},{:.6f}) "
             "cmd_deg=({:.2f},{:.2f}) packed_pitch_deg={:.2f} "
             "yaw_pi=(error={:.2f}deg integral={:.2f}deg output={:.2f}deg) "
@@ -2375,6 +2446,7 @@ int main(int argc, char * argv[])
             ballistic_camera_range_m, ballistic_total_holdover_m,
             ballistic_pitch_compensation_rad * RAD2DEG,
             direct_pitch_pixel_error_rad * RAD2DEG,
+            center_command_lead_rad * RAD2DEG, gyro_center_follow_active,
             q.w(), q.x(), q.y(), q.z(),
             command.yaw * RAD2DEG, command.pitch * RAD2DEG,
             xuc_pitch_sign_for_log * command.pitch * RAD2DEG,

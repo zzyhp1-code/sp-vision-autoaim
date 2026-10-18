@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <fmt/format.h>
 #include <functional>
 #include <limits>
 #include <tuple>
@@ -49,8 +50,11 @@ Tracker::Tracker(const std::string & config_path, Solver & solver)
       yaml["tracker_batch_max_observations"].as<int>(), 1, 4);
   }
   if (yaml["tracker_batch_min_omega_rad_s"]) {
+    // Upper bound raised from 20 to 1000 so a config can disable joint updates
+    // outright (setting it above any physically reachable yaw rate).  The old
+    // ceiling of 20 silently capped such a value at 20.
     batch_min_omega_rad_s_ = std::clamp(
-      yaml["tracker_batch_min_omega_rad_s"].as<double>(), 0.0, 20.0);
+      yaml["tracker_batch_min_omega_rad_s"].as<double>(), 0.0, 1000.0);
   }
   if (yaml["tracker_target_switch_min_frames"]) {
     target_switch_min_frames_ = std::clamp(
@@ -400,10 +404,43 @@ bool Tracker::set_target(std::list<Armor> & armors, std::chrono::steady_clock::t
   }
 
   else {
-    Eigen::VectorXd P0_dig{{1, 64, 1, 64, 1, 64, 0.4, 100, 1, 1, 1}};
+    // x = [cx, vx, cy, vy, cz, vz, yaw, yaw_rate, r, l, h]
+    //
+    // Priors for the three geometric states (r, l, h) are tightened together
+    // because none of them is well observable from the on-axis face alone.  The
+    // observation is p = c - r*[cos, sin], so shifting the centre along that
+    // direction while adding the same amount to r leaves the image barely
+    // changed; with the old variance of 1.0 (std 1 m) the estimate was free to
+    // trade r against position and the field log showed r reaching -0.558 and
+    // 0.653 m (a negative radius is meaningless).  `diverged()` then fired on
+    // r < 0.05 and reset an otherwise working track.
+    //
+    //   l = r2 - r1 : measured chassis value 0.04 m, prior std 5 cm
+    //   h = z2 - z1 : measured 0.00 m, prior std 5 cm
+    //   r           : 0.24..0.28 m measured (centre to armour), prior std 3 cm
+    //
+    // The radius itself is passed to the constructor (0.26 m) so that the centre
+    // is derived from it consistently -- changing r after construction would
+    // move every predicted face.
+    Eigen::VectorXd P0_dig{{1, 64, 1, 64, 1, 64, 0.4, 100, 0.0009, 0.0025, 0.0025}};
     target_ = Target(
-      armor, t, 0.2, 4, P0_dig, yaw_eskf_config_, iterated_update_config_);
+      armor, t, 0.26, 4, P0_dig, yaw_eskf_config_, iterated_update_config_);
   }
+
+  // Seed the geometric offsets from the measured chassis instead of leaving them
+  // at zero.  The EKF cannot observe l/h from the on-axis face alone, so the
+  // initial value is what the whole track is based on until an off-axis face
+  // happens to be associated.  Starting from the real values keeps the predicted
+  // faces 1/3 close to where they actually are, which is what lets the
+  // association cost for those faces fall inside the gate.
+  //
+  // `l` is r2 - r1 with faces 1 and 3 on the +l radius.  From h_armor_xyz():
+  // angle = yaw + i*90 deg and position = centre - r_i*[cos, sin], so face 1 is
+  // always on the -y side and face 3 always on the +y side; `l` only changes how
+  // far each sits from the centre, it cannot swap the two sides.  An earlier
+  // attempt to use a negative l to "swap" the predictions came from a mistaken
+  // reading of the per-face cost breakdown and has been reverted.
+  target_.seed_geometry(0.04, 0.00);
 
   last_associations_.push_back({selected_detection_index, 0, 0.0});
   primary_detection_index_ = selected_detection_index;
@@ -478,9 +515,56 @@ bool Tracker::update_target(std::list<Armor> & armors, std::chrono::steady_clock
   };
   std::vector<Candidate> candidates;
   int detection_index = 0;
+  // Diagnostic counters: how many detections were dropped before the cost gate
+  // even ran, and the best rejected cost.  Without this it is impossible to tell
+  // "the gate is too tight" from "the other detection is a different armor".
+  int dropped_by_name = 0;
+  int dropped_by_type = 0;
+  int rejected_by_cost = 0;
+  double best_rejected_cost = std::numeric_limits<double>::infinity();
+  int best_rejected_det = -1;
+  int best_rejected_face = -1;
+
+  // Per-term breakdown of the best rejected candidate, so a systematic bias can
+  // be attributed to the centre term (predicted position wrong) or the angle
+  // term (predicted normal wrong) instead of just seeing the lumped cost.
+  double best_detail_cost = std::numeric_limits<double>::infinity();
+  int best_detail_det = -1;
+  int best_detail_face = -1;
+  double best_detail_center = 0.0;
+  double best_detail_angle = 0.0;
+  double best_detail_range = 0.0;
+  double best_detail_conf = 0.0;
+  double best_detail_px = 0.0;
+  double best_detail_scale = 1.0;
+
+  // Full detection x face cost matrix for the frame, so the whole picture is
+  // visible at once instead of only the single best near-miss.  Each cell keeps
+  // the lumped cost plus the signed angular difference, which is what
+  // distinguishes "faces 1 and 3 swapped" from "body yaw is off by a constant".
+  struct MatrixCell
+  {
+    bool valid = false;
+    double cost = std::numeric_limits<double>::infinity();
+    double angle_deg = 0.0;
+    double pixels = 0.0;
+    double range_m = 0.0;
+  };
+  // At most a handful of detections and 4 faces; fixed bounds keep this cheap.
+  constexpr int kMaxDiagDet = 4;
+  MatrixCell cost_matrix[kMaxDiagDet][4];
+  double det_range[kMaxDiagDet] = {0, 0, 0, 0};
+  double det_yaw_deg[kMaxDiagDet] = {0, 0, 0, 0};
   for (auto & armor : armors) {
     const int current_detection_index = detection_index++;
-    if (armor.name != target_.name || armor.type != target_.armor_type) continue;
+    if (armor.name != target_.name) {
+      ++dropped_by_name;
+      continue;
+    }
+    if (armor.type != target_.armor_type) {
+      ++dropped_by_type;
+      continue;
+    }
 
     solver_.solve(armor);
     const double observed_range_m = std::max(0.05, armor.ypd_in_world[2]);
@@ -491,6 +575,12 @@ bool Tracker::update_target(std::list<Armor> & armors, std::chrono::steady_clock
       observed_center = cv::Point2f(0.0F, 0.0F);
       for (const auto & point : armor.points) observed_center += point;
       observed_center *= 1.0F / static_cast<float>(armor.points.size());
+    }
+
+    if (current_detection_index < kMaxDiagDet) {
+      det_range[current_detection_index] = observed_range_m;
+      det_yaw_deg[current_detection_index] =
+        armor.ypr_in_world[0] * 180.0 / M_PI;
     }
 
     for (std::size_t id = 0; id < predicted_faces.size(); ++id) {
@@ -515,12 +605,50 @@ bool Tracker::update_target(std::list<Armor> & armors, std::chrono::steady_clock
       const double cost = center_error * center_error +
         0.20 * angle_error * angle_error +
         0.20 * range_error * range_error - confidence_bonus;
+
+      // Record this (detection, face) pair for the full-matrix dump.  The signed
+      // angular difference is what reveals a swapped face pair or a yaw bias.
+      if (current_detection_index < kMaxDiagDet && id < 4) {
+        auto & cell = cost_matrix[current_detection_index][id];
+        cell.valid = true;
+        cell.cost = cost;
+        cell.angle_deg =
+          std::remainder(armor.ypr_in_world[0] - face[3], 2.0 * M_PI) * 180.0 / M_PI;
+        cell.pixels = cv::norm(observed_center - projected_center);
+        cell.range_m = predicted_range_m;
+      }
+
+      // Keep the per-term breakdown of the best near-miss so a systematic bias
+      // can be attributed: a large centre term means the predicted image
+      // position is off (radius / l / h / centre), a large angle term means the
+      // predicted face normal is off (body yaw), a large range term means the
+      // solved distance disagrees with the prediction.
+      if (std::isfinite(cost) && cost > association_max_cost_ &&
+          cost < best_detail_cost) {
+        best_detail_cost = cost;
+        best_detail_det = current_detection_index;
+        best_detail_face = static_cast<int>(id);
+        best_detail_center = center_error;
+        best_detail_angle = angle_error;
+        best_detail_range = range_error;
+        best_detail_conf = confidence_bonus;
+        best_detail_px = cv::norm(observed_center - projected_center);
+        best_detail_scale = detection_scale_px;
+      }
+
       if (std::isfinite(cost) && cost <= association_max_cost_) {
         const auto state = target_.ekf_x();
         const double center_yaw = std::atan2(state[2], state[0]);
         candidates.push_back({
           &armor, current_detection_index, static_cast<int>(id), cost,
           std::abs(tools::limit_rad(face[3] - center_yaw))});
+      } else if (std::isfinite(cost)) {
+        ++rejected_by_cost;
+        if (cost < best_rejected_cost) {
+          best_rejected_cost = cost;
+          best_rejected_det = current_detection_index;
+          best_rejected_face = static_cast<int>(id);
+        }
       }
     }
   }
@@ -570,6 +698,57 @@ bool Tracker::update_target(std::list<Armor> & armors, std::chrono::steady_clock
     });
   primary_detection_index_ = primary_it->detection_index;
   primary_face_id_ = primary_it->face_id;
+  // Copy the primary before `selected` is possibly rewritten below; primary_it
+  // is an iterator into `selected` and would dangle afterwards.
+  const Candidate primary = *primary_it;
+
+  // ---------------------------------------------------------------------------
+  // Geometric plausibility gate for the off-axis faces.
+  //
+  // Faces 1 and 3 are the ones offset along the chassis short axis, so they are
+  // the only observations that constrain `l = r2 - r1` and `h`.  Those two states
+  // receive no process noise, so a single mis-association can drive them far from
+  // zero in one step.  Field logs caught exactly that: `l` went 0.000 -> 0.435 m
+  // in one frame, `r + l` left diverged()'s 0.05..0.5 band, and the track reset.
+  //
+  // A real 4-armor chassis has |r2 - r1| of a few centimetres.  An association
+  // implying much more is a mis-pairing, not a measurement, so the off-axis face
+  // is dropped and the on-axis observation keeps the track alive.
+  {
+    constexpr double kMaxPlausibleRadiusDelta = 0.10;  // metres, |r2 - r1|
+    constexpr double kMaxPlausibleHeightDelta = 0.10;  // metres, |h|
+
+    const auto state = target_.ekf_x();
+    if (state.size() >= 11) {
+      const bool geometry_already_broken =
+        std::abs(state[9]) > kMaxPlausibleRadiusDelta ||
+        std::abs(state[10]) > kMaxPlausibleHeightDelta;
+
+      const bool has_off_axis = std::any_of(
+        selected.begin(), selected.end(), [](const Candidate & c) {
+          return c.face_id == 1 || c.face_id == 3;
+        });
+
+      if (has_off_axis && geometry_already_broken) {
+        std::vector<Candidate> filtered;
+        filtered.reserve(selected.size());
+        for (const auto & association : selected) {
+          if (association.face_id == 1 || association.face_id == 3) {
+            tools::logger()->info(
+              "[ASSOC] off-axis face{} rejected: geometry implausible "
+              "(l={:.3f} h={:.3f}, limits {:.2f}/{:.2f})",
+              association.face_id, state[9], state[10],
+              kMaxPlausibleRadiusDelta, kMaxPlausibleHeightDelta);
+            continue;
+          }
+          filtered.push_back(association);
+        }
+        selected = filtered.empty()
+          ? std::vector<Candidate>{primary}
+          : std::move(filtered);
+      }
+    }
+  }
 
   // Preserve the proven single-observation path on fixed and slow targets.
   // Joint observations are enabled only after the target is clearly in gyro
@@ -591,12 +770,92 @@ bool Tracker::update_target(std::list<Armor> & armors, std::chrono::steady_clock
   }
 
   static int association_log_counter = 0;
-  if (++association_log_counter % 50 == 0) {
+  if (++association_log_counter % 10 == 0) {
     tools::logger()->info(
       "[ASSOC] primary_face={} matches={} cost={:.3f} detections={} confidence={:.2f}",
       primary_face_id_, batch.size(), primary_it->cost, armors.size(),
       primary_it->armor->confidence);
   }
+
+  // Diagnostic: dump every surviving candidate so a face-association jump can be
+  // told apart from a weak-observability drift.  Sampled more often than the
+  // summary line because a face hand-over can complete within a few frames.
+  if (association_log_counter % 10 == 0) {
+    static const char * kFaceNames[4] = {"face0", "face1", "face2", "face3"};
+    for (const auto & c : candidates) {
+      const char * fname = (c.face_id >= 0 && c.face_id < 4) ? kFaceNames[c.face_id] : "face?";
+      tools::logger()->info(
+        "[ASSOC_D] det={} {} cost={:.3f} align={:.1f}deg conf={:.2f}",
+        c.detection_index, fname, c.cost, c.alignment_rad * 180.0 / M_PI,
+        c.armor ? c.armor->confidence : 0.0);
+    }
+    // Why the other detections never became candidates.  This is the key split
+    // between "cost gate too tight" and "they are simply a different armor".
+    tools::logger()->info(
+      "[ASSOC_D] gate: total_det={} cand={} drop_name={} drop_type={} reject_cost={} "
+      "best_rejected=(det{},face{},cost={:.2f}) limit={:.2f}",
+      armors.size(), candidates.size(), dropped_by_name, dropped_by_type,
+      rejected_by_cost, best_rejected_det, best_rejected_face,
+      std::isfinite(best_rejected_cost) ? best_rejected_cost : -1.0,
+      association_max_cost_);
+
+    // Term-by-term attribution of the closest rejected candidate.
+    if (std::isfinite(best_detail_cost)) {
+      tools::logger()->info(
+        "[ASSOC_D] near-miss det{} face{} cost={:.2f} = centre {:.2f}^2->{:.2f} "
+        "+ angle {:.2f}^2*0.20->{:.2f} + range {:.2f}^2*0.20->{:.2f} - conf {:.2f} "
+        "| pixels={:.1f} scale={:.1f} angle_deg={:.1f}",
+        best_detail_det, best_detail_face, best_detail_cost,
+        best_detail_center, best_detail_center * best_detail_center,
+        best_detail_angle, 0.20 * best_detail_angle * best_detail_angle,
+        best_detail_range, 0.20 * best_detail_range * best_detail_range,
+        best_detail_conf,
+        best_detail_px, best_detail_scale, best_detail_angle * 20.0);
+    }
+    // Which face the assignment actually committed, and the runner-up, so a
+    // near-tie between adjacent faces is visible.
+    if (selected.size() > 1) {
+      std::string line = "  selected:";
+      for (const auto & s : selected) {
+        line += fmt::format(" det{}->face{} ({:.3f})", s.detection_index, s.face_id, s.cost);
+      }
+      tools::logger()->info("[ASSOC_D]{}", line);
+    }
+    // State the estimator believes, for correlating with the r/l jumps.
+    // Flag any excursion of l/h away from 0: those two states are only written
+    // when face 1 or 3 is associated, so a nonzero value pinpoints the frame at
+    // which an odd face was accepted.
+    const auto st = target_.ekf_x();
+    if (st.size() >= 11) {
+      tools::logger()->info(
+        "[ASSOC_D] ekf r={:.3f} l={:.3f} h={:.3f} yaw={:.1f}deg omega={:+.3f}{}",
+        st[8], st[9], st[10], st[6] * 180.0 / M_PI, st[7],
+        (std::abs(st[9]) > 0.05 || std::abs(st[10]) > 0.05) ? "  <<< L/H NONZERO" : "");
+    }
+
+    // Full detection x face matrix.  One line per detection so the pairing can be
+    // read directly: which face each detection prefers, and by how much.
+    for (int d = 0; d < kMaxDiagDet; ++d) {
+      bool any = false;
+      for (int f = 0; f < 4; ++f) any = any || cost_matrix[d][f].valid;
+      if (!any) continue;
+      std::string row = fmt::format(
+        "[ASSOC_M] det{} range={:.2f}m yaw={:+.1f}deg |", d,
+        det_range[d], det_yaw_deg[d]);
+      for (int f = 0; f < 4; ++f) {
+        const auto & c = cost_matrix[d][f];
+        if (c.valid) {
+          row += fmt::format(
+            " f{}:cost={:.2f} ang={:+.0f} px={:.0f} pred_r={:.2f} |", f, c.cost,
+            c.angle_deg, c.pixels, c.range_m);
+        } else {
+          row += fmt::format(" f{}: proj_fail |", f);
+        }
+      }
+      tools::logger()->info("{}", row);
+    }
+  }
+
   if (use_batch) {
     target_.update_batch(batch, primary_face_id_);
   } else {

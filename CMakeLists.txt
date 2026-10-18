@@ -58,6 +58,12 @@ message(STATUS "--------------------CMAKE_BUILD_TYPE: ${CMAKE_BUILD_TYPE}-------
 
 
 find_package(OpenCV 4.5 REQUIRED)
+# The build host's SSD has a few unreadable sectors, and
+# libopencv_alphamat.so.4.5.4d happens to live on one of them: the linker dies
+# with SIGBUS the moment it touches that file.  This project never calls the
+# alphamat module, so drop it from the link list instead of depending on a
+# specific linker being selected.  Nothing else about OpenCV changes.
+list(FILTER OpenCV_LIBS EXCLUDE REGEX "opencv_alphamat")
 
 find_package(fmt REQUIRED)
 find_package(Eigen3 REQUIRED)
@@ -257,6 +263,9 @@ add_executable(
 add_executable(yaw_eskf_test tasks/auto_aim/yaw_eskf_test.cpp)
 add_executable(armor_motion_filter_test tasks/auto_aim/armor_motion_filter_test.cpp)
 add_executable(robust_range_filter_test tasks/auto_aim/robust_range_filter_test.cpp)
+add_executable(
+  center_follow_lead_test
+  tasks/auto_aim/center_follow_lead_test.cpp)
 add_executable(shot_delay_adapter_test tasks/auto_aim/shot_delay_adapter_test.cpp)
 add_executable(
   adaptive_corner_refiner_test
@@ -278,6 +287,7 @@ foreach(estimator_test
     yaw_eskf_test
     armor_motion_filter_test
     robust_range_filter_test
+    center_follow_lead_test
     shot_delay_adapter_test
     adaptive_corner_refiner_test
     ekf_consistency_test

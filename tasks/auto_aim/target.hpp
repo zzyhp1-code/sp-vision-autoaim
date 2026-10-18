@@ -52,6 +52,14 @@ public:
   void update_batch(
     const std::vector<std::pair<Armor, int>> & observations, int primary_armor_id);
 
+  // Seed the two geometric offsets that only the off-axis faces (1 and 3) can
+  // observe.  They carry no process noise, so their starting value is what the
+  // predicted positions of those faces are based on until one of them is
+  // associated.  Leaving them at zero puts faces 1/3 on the same radius as
+  // faces 0/2, which biases their predicted image position and keeps their
+  // association cost above the gate.  Called once, right after construction.
+  void seed_geometry(double radius_delta, double height_delta);
+
   Eigen::VectorXd ekf_x() const;
   const tools::ExtendedKalmanFilter & ekf() const;
   bool yaw_eskf_trusted() const;
@@ -90,6 +98,16 @@ private:
 
   void update_ypda(const Armor & armor, int id);  // yaw pitch distance angle
   void update_yaw_eskf(const Armor & armor, int id);
+
+  // Bound the two geometric offsets that only the off-axis faces constrain.
+  //
+  // `l = r2 - r1` and `h` receive no process noise, so a single mis-associated
+  // observation of face 1 or face 3 can move them far from zero in one update.
+  // Field logs showed `l` going 0.000 -> 0.435 m in a single frame, which pushed
+  // `r + l` outside diverged()'s 0.05..0.5 band and reset an otherwise healthy
+  // track.  A real 4-armor chassis has |r2 - r1| of a few centimetres, so the
+  // estimate is clamped to that physical band after every update.
+  void clamp_geometry();
 
   Eigen::Vector3d h_armor_xyz(const Eigen::VectorXd & x, int id) const;
   Eigen::MatrixXd h_jacobian(const Eigen::VectorXd & x, int id) const;

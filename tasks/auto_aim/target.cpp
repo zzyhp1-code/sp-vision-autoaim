@@ -212,8 +212,66 @@ void Target::update(const Armor & armor, int id)
 
   update_ypda(armor, id);
   update_yaw_eskf(armor, id);
+  clamp_geometry();
   if (id < static_cast<int>(armor_motion_filters_.size()))
     armor_motion_filters_[id].update(armor.xyz_in_world.head<3>());
+}
+
+void Target::seed_geometry(double radius_delta, double height_delta)
+{
+  if (ekf_.x.size() < 11) return;
+
+  // h_armor_xyz() places face i at centre - r_i * [cos, sin] with
+  // r_i = r + (i odd ? l : 0).  Face 0 is the one the track was initialised from,
+  // so its own offset is zero by construction; only l and h need seeding.  The
+  // values are static properties of the chassis (r2 - r1 and z2 - z1), so they
+  // do not need to be recomputed against the centre.
+  ekf_.x[9] = radius_delta;
+  ekf_.x[10] = height_delta;
+
+  tools::logger()->info(
+    "[Target] geometry seeded: l={:.3f} h={:.3f}", ekf_.x[9], ekf_.x[10]);
+}
+
+void Target::clamp_geometry()
+{
+  // Bound the three geometric states to physically plausible values.
+  //
+  // None of r, l = r2 - r1 or h = z2 - z1 is well observable from a single face:
+  // the observation is p = c - r*[cos, sin], so moving the centre along that
+  // direction while adding the same amount to r leaves the image almost
+  // unchanged.  Field logs showed r reaching -0.558 m (a negative radius) and
+  // l reaching 0.435 m, and ``diverged()`` then reset an otherwise healthy
+  // track because it requires 0.05 < r < 0.5 and 0.05 < r+l < 0.5.
+  //
+  // The bands below come from the measured chassis (centre-to-armour 0.24..0.28 m,
+  // front-back difference a few cm) with generous margins so that a genuinely
+  // informative observation can still move the estimate inside them.  A wide
+  // hard bound is deliberately preferred over a tight one: the prior in P0 is
+  // what suppresses noise, while this only prevents nonsense.
+  constexpr double kMinRadius = 0.15;       // metres
+  constexpr double kMaxRadius = 0.40;       // metres
+  constexpr double kMaxRadiusDelta = 0.10;  // metres, |r2 - r1|
+  constexpr double kMaxHeightDelta = 0.10;  // metres, |h|
+
+  if (ekf_.x.size() < 11) return;
+
+  const double r_before = ekf_.x[8];
+  const double l_before = ekf_.x[9];
+  const double h_before = ekf_.x[10];
+
+  const bool r_out = ekf_.x[8] < kMinRadius || ekf_.x[8] > kMaxRadius;
+  const bool l_out = std::abs(ekf_.x[9]) > kMaxRadiusDelta;
+  const bool h_out = std::abs(ekf_.x[10]) > kMaxHeightDelta;
+  if (!r_out && !l_out && !h_out) return;
+
+  if (r_out) ekf_.x[8] = std::clamp(ekf_.x[8], kMinRadius, kMaxRadius);
+  if (l_out) ekf_.x[9] = std::clamp(ekf_.x[9], -kMaxRadiusDelta, kMaxRadiusDelta);
+  if (h_out) ekf_.x[10] = std::clamp(ekf_.x[10], -kMaxHeightDelta, kMaxHeightDelta);
+
+  tools::logger()->debug(
+    "[Target] geometry clamped: r {:.3f}->{:.3f} l {:.3f}->{:.3f} h {:.3f}->{:.3f}",
+    r_before, ekf_.x[8], l_before, ekf_.x[9], h_before, ekf_.x[10]);
 }
 
 void Target::update_batch(
@@ -320,6 +378,7 @@ void Target::update_batch(
   // The legacy diagnostic compares NIS against a per-four-dimensional
   // threshold.  A stacked 4N observation naturally has a larger raw NIS; keep
   // tracker reset behaviour comparable by recording NIS per observed face.
+  clamp_geometry();
   if (observation_count > 1 && std::isfinite(ekf_.last_nis)) {
     const double normalized_nis = ekf_.last_nis / observation_count;
     ekf_.last_nis = normalized_nis;

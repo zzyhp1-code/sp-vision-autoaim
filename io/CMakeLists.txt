@@ -44,7 +44,10 @@ if(MVSDK_LIBRARY)
   target_sources(io PRIVATE mindvision/mindvision.cpp)
   target_include_directories(io PUBLIC mindvision/include)
   target_compile_definitions(io PRIVATE HAVE_MINDVISION)
-  target_link_libraries(io PUBLIC "${MVSDK_LIBRARY}")
+  # Plain signature on purpose: line 53 below links `io` with the plain
+  # signature, and mixing a PUBLIC/PRIVATE keyword here makes configuration fail
+  # as soon as the MindVision SDK is installed system-wide.
+  target_link_libraries(io "${MVSDK_LIBRARY}")
   message(STATUS "MindVision SDK found: MindVision camera backend enabled")
 else()
   message(WARNING "MindVision SDK not found. MindVision camera backend will be disabled.")
