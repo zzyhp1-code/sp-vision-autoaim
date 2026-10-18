@@ -1,0 +1,730 @@
+[2026-10-18 18:17:17.067] [info] [Performance] Thread limits: OpenCV=1, TBB=4, OMP=4
+[2026-10-18 18:17:17.088] [info] [ROS2Visualizer] Initialized: node=standard_node, marker_topic=standard_markers
+[2026-10-18 18:17:17.088] [info] [ROS2Visualizer] Spin thread started
+[2026-10-18 18:17:17.088] [info] [ROS2] Visualizer initialized
+[2026-10-18 18:17:17.089] [info] [CBoard] disabled (cboard_enable=false); XUC is expected to provide IMU
+[2026-10-18 18:17:17.090] [info] Camera constructor: config_path=configs/standard.yaml, camera_name=hikrobot
+[2026-10-18 18:17:17.090] [info] Creating HikRobot camera
+[2026-10-18 18:17:17.093] [info] Camera constructor completed
+[2026-10-18 18:17:17.093] [info] HikRobot's daemon thread started.
+[2026-10-18 18:17:17.095] [info] [XUC] serial opened /dev/serial/by-id/usb-1a86_USB_Serial-if00-port0 @ 460800 baud, command_unit=deg, imu_wire_unit=deg, imu_output=rad, yaw_sign=1, pitch_sign=1, imu_yaw_sign=-1, imu_pitch_sign=1, allow_control=true, allow_shoot=true, require_feedback=true, require_auto_mode=false, max_yaw_excursion_deg=0.00, lock_pitch=false
+[2026-10-18 18:17:17.332] [info] [YOLO26] CPU cores: 16, big cores found: 8, core_type: unavailable, max_freq: 4700000
+[2026-10-18 18:17:17.333] [info] [YOLO26] Big core ids: [0,1,2,3,4,5,6,7]
+[2026-10-18 18:17:17.333] [info] [YOLO26] Successfully bound to 8 big cores
+[2026-10-18 18:17:17.333] [info] [YOLO26] Disabled OpenCV threading to avoid CPU contention
+[2026-10-18 18:17:17.352] [info] [YOLO26] Compiling model with 4 threads (LATENCY mode)
+[2026-10-18 18:17:17.689] [info] [YOLO26] Initialization complete - SYNC mode optimized
+[2026-10-18 18:17:17.689] [info] [YOLO26] Config: threads=4, streams=1, requests=1, letterbox=114, min_confidence=0.10, candidate_confidence=0.04, direct/memory_confirmed=0.04/0.06, min_keypoint_confidence=0.00, swap_rb=false, refine_color=true, refine_corners=true, color_delta=8.0, single_bar_delta=12.0, color_min_pixels=6, color_hold_frames=20, save_samples=false, debug=false
+[2026-10-18 18:17:17.698] [info] === All modules initialized ===
+[2026-10-18 18:17:17.698] [info] [ROS2Visualizer] Published static TF: gimbal -> camera
+[2026-10-18 18:17:17.698] [info] [ROS2] Published static TF: gimbal -> camera
+[2026-10-18 18:17:17.698] [info] === Entering main loop ===
+[2026-10-18 18:17:17.698] [info] [SYNC] 发送默认命令，等待相机触发
+[2026-10-18 18:17:17.936] [info] [HikRobot][READBACK] image=1600x1080, offset=(736,480), pixel_format=0x1080009
+[2026-10-18 18:17:17.937] [info] [HikRobot][READBACK] exposure_us=6000.0 auto=0, gain=16.01 auto=0, white_balance_auto=0
+[2026-10-18 18:17:17.937] [info] [HikRobot][READBACK] trigger=off (continuous acquisition)
+[2026-10-18 18:17:17.937] [info] [HikRobot][READBACK] acquisition_fps=60.00
+[2026-10-18 18:17:17.937] [info] [HikRobot] USB transfer ways=4
+[2026-10-18 18:17:17.950] [info] HikRobot's capture thread started.
+[2026-10-18 18:17:17.976] [info] [HikRobot] first frame: 1600x1080, pixel_type=0x1080009, frame_len=1728000
+[2026-10-18 18:17:18.042] [info] [Target] geometry seeded: l=0.040 h=0.000
+[2026-10-18 18:17:18.163] [warning] [Tracker] Large dt: 0.150s
+[2026-10-18 18:17:18.163] [info] [Target] geometry seeded: l=0.040 h=0.000
+[2026-10-18 18:17:18.399] [info] [XUC][YAW] tracker convergence confirmed; actuator reacquired
+[2026-10-18 18:17:18.584] [info] [ASSOC] primary_face=0 matches=1 cost=-0.086 detections=1 confidence=0.88
+[2026-10-18 18:17:18.584] [info] [ASSOC_D] det=0 face0 cost=-0.086 align=6.9deg conf=0.88
+[2026-10-18 18:17:18.584] [info] [ASSOC_D] gate: total_det=1 cand=1 drop_name=0 drop_type=0 reject_cost=3 best_rejected=(det0,face3,cost=11.72) limit=0.80
+[2026-10-18 18:17:18.584] [info] [ASSOC_D] near-miss det0 face3 cost=11.72 = centre 2.76^2->7.61 + angle 4.58^2*0.20->4.19 + range 0.28^2*0.20->0.02 - conf 0.09 | pixels=162.5 scale=58.9 angle_deg=91.5
+[2026-10-18 18:17:18.584] [info] [ASSOC_D] ekf r=0.260 l=0.040 h=0.000 yaw=-61.8deg omega=+0.037
+[2026-10-18 18:17:18.584] [info] [ASSOC_M] det0 range=4.20m yaw=-60.3deg | f0:cost=-0.09 ang=+2 px=0 pred_r=4.20 | f1:cost=15.57 ang=-88 px=202 pred_r=4.43 | f2:cost=16.23 ang=-178 px=35 pred_r=4.72 | f3:cost=11.72 ang=+92 px=163 pred_r=4.50 |
+[2026-10-18 18:17:18.839] [info] [DRYRUN] measured_gimbal=(4.188,0.136,-0.160) measured_world=(2.439,-3.411,0.044) tracked_world=(2.441,-3.405,0.044) target_gimbal_deg=(1.86,-2.18) target_world_deg=(-54.43,0.60) gimbal_deg=(-56.28,-2.79) armor_y_px=666.7 pixel_error_deg=(-1.57,2.77) ballistic=(range=4.190m holdover=0.178m comp=2.40deg residual=0.37deg) center_lead=0.00deg center_follow=false q_wxyz=(0.881525,0.011476,-0.021455,0.471510) cmd_deg=(-54.92,-2.29) packed_pitch_deg=-2.29 yaw_pi=(error=nandeg integral=0.00deg output=0.00deg) control=true shoot=false
+[2026-10-18 18:17:18.902] [info] [ASSOC] primary_face=0 matches=1 cost=-0.074 detections=1 confidence=0.88
+[2026-10-18 18:17:18.902] [info] [ASSOC_D] det=0 face0 cost=-0.074 align=10.6deg conf=0.88
+[2026-10-18 18:17:18.902] [info] [ASSOC_D] gate: total_det=1 cand=1 drop_name=0 drop_type=0 reject_cost=3 best_rejected=(det0,face3,cost=11.20) limit=0.80
+[2026-10-18 18:17:18.902] [info] [ASSOC_D] near-miss det0 face3 cost=11.20 = centre 2.61^2->6.83 + angle 4.71^2*0.20->4.44 + range 0.27^2*0.20->0.01 - conf 0.09 | pixels=154.0 scale=58.9 angle_deg=94.3
+[2026-10-18 18:17:18.902] [info] [ASSOC_D] ekf r=0.260 l=0.040 h=0.000 yaw=-65.6deg omega=-0.324
+[2026-10-18 18:17:18.902] [info] [ASSOC_M] det0 range=4.21m yaw=-61.3deg | f0:cost=-0.07 ang=+4 px=4 pred_r=4.18 | f1:cost=16.13 ang=-86 px=209 pred_r=4.39 | f2:cost=16.14 ang=-176 px=51 pred_r=4.70 | f3:cost=11.20 ang=+94 px=154 pred_r=4.50 |
+[2026-10-18 18:17:19.194] [info] [ASSOC] primary_face=0 matches=1 cost=-0.086 detections=1 confidence=0.87
+[2026-10-18 18:17:19.194] [info] [ASSOC_D] det=0 face0 cost=-0.086 align=9.5deg conf=0.87
+[2026-10-18 18:17:19.194] [info] [ASSOC_D] gate: total_det=1 cand=1 drop_name=0 drop_type=0 reject_cost=3 best_rejected=(det0,face3,cost=10.80) limit=0.80
+[2026-10-18 18:17:19.194] [info] [ASSOC_D] near-miss det0 face3 cost=10.80 = centre 2.62^2->6.89 + angle 4.46^2*0.20->3.98 + range 0.29^2*0.20->0.02 - conf 0.09 | pixels=154.6 scale=58.9 angle_deg=89.2
+[2026-10-18 18:17:19.194] [info] [ASSOC_D] ekf r=0.260 l=0.040 h=0.000 yaw=-64.5deg omega=-0.090
+[2026-10-18 18:17:19.195] [info] [ASSOC_M] det0 range=4.18m yaw=-65.3deg | f0:cost=-0.09 ang=-1 px=1 pred_r=4.18 | f1:cost=16.67 ang=-91 px=209 pred_r=4.40 | f2:cost=16.70 ang=+179 px=49 pred_r=4.69 | f3:cost=10.80 ang=+89 px=155 pred_r=4.50 |
+[2026-10-18 18:17:19.443] [info] [DRYRUN] measured_gimbal=(4.188,0.136,-0.160) measured_world=(2.439,-3.410,0.044) tracked_world=(2.436,-3.405,0.044) target_gimbal_deg=(1.86,-2.18) target_world_deg=(-54.43,0.60) gimbal_deg=(-56.28,-2.79) armor_y_px=666.7 pixel_error_deg=(-1.58,2.77) ballistic=(range=4.186m holdover=0.178m comp=2.40deg residual=0.37deg) center_lead=0.00deg center_follow=false q_wxyz=(0.881525,0.011476,-0.021455,0.471510) cmd_deg=(-54.92,-2.29) packed_pitch_deg=-2.29 yaw_pi=(error=nandeg integral=0.00deg output=0.00deg) control=true shoot=false
+[2026-10-18 18:17:19.500] [info] [ASSOC] primary_face=0 matches=1 cost=-0.089 detections=1 confidence=0.89
+[2026-10-18 18:17:19.500] [info] [ASSOC_D] det=0 face0 cost=-0.089 align=10.5deg conf=0.89
+[2026-10-18 18:17:19.500] [info] [ASSOC_D] gate: total_det=1 cand=1 drop_name=0 drop_type=0 reject_cost=3 best_rejected=(det0,face3,cost=10.53) limit=0.80
+[2026-10-18 18:17:19.500] [info] [ASSOC_D] near-miss det0 face3 cost=10.53 = centre 2.56^2->6.53 + angle 4.51^2*0.20->4.07 + range 0.29^2*0.20->0.02 - conf 0.09 | pixels=150.6 scale=58.9 angle_deg=90.2
+[2026-10-18 18:17:19.500] [info] [ASSOC_D] ekf r=0.260 l=0.040 h=0.000 yaw=-65.5deg omega=-0.055
+[2026-10-18 18:17:19.500] [info] [ASSOC_M] det0 range=4.18m yaw=-65.3deg | f0:cost=-0.09 ang=+0 px=0 pred_r=4.19 | f1:cost=16.91 ang=-90 px=212 pred_r=4.40 | f2:cost=16.96 ang=-180 px=54 pred_r=4.70 | f3:cost=10.53 ang=+90 px=151 pred_r=4.50 |
+[2026-10-18 18:17:19.697] [info] [SYNC][XUC] mode=0 yaw=56.28 deg pitch=-2.79 deg feeder_rpm=0.00 wheel0_rpm=0 wheel1_rpm=0 wheel_delta=0 projectile_speed=19.00 gate=0x00 switch=0 rc=0 sticks=0 imu=0 serial=0 control=0 yaw_armed=0 pitch_active=0
+[2026-10-18 18:17:19.718] [info] [YAWESKF] trusted=1 angle=-1.099 omega=+0.120 alpha=+0.259 raw_ekf_omega=+0.050 nis=0.14 accepted=48 rejected=0 whole_iekf_nis=0.22 armor_cv_trusted=1 armor_v=(-0.03,+0.04,-0.00) armor_cv_nis=0.37
+[2026-10-18 18:17:19.718] [info] [RANGE] raw=4.145m model=4.181m filtered=4.185m model_used=1 raw_limited=0
+[2026-10-18 18:17:19.720] [info] [PERF] 总耗时=23.7ms (检测=20.2ms, 跟踪=0.4ms), FPS=42.3
+[2026-10-18 18:17:19.720] [info] 📊 [CAMERA FPS] 瞬时帧率=42.2fps, 平均帧率=28.7fps, 总帧数=50, 运行时间=1.7s
+[2026-10-18 18:17:19.773] [info] [ASSOC] primary_face=0 matches=1 cost=-0.085 detections=1 confidence=0.89
+[2026-10-18 18:17:19.773] [info] [ASSOC_D] det=0 face0 cost=-0.085 align=7.5deg conf=0.89
+[2026-10-18 18:17:19.773] [info] [ASSOC_D] gate: total_det=1 cand=1 drop_name=0 drop_type=0 reject_cost=3 best_rejected=(det0,face3,cost=11.12) limit=0.80
+[2026-10-18 18:17:19.773] [info] [ASSOC_D] near-miss det0 face3 cost=11.12 = centre 2.72^2->7.40 + angle 4.36^2*0.20->3.80 + range 0.28^2*0.20->0.02 - conf 0.09 | pixels=160.3 scale=58.9 angle_deg=87.1
+[2026-10-18 18:17:19.773] [info] [ASSOC_D] ekf r=0.260 l=0.040 h=0.000 yaw=-62.4deg omega=+0.147
+[2026-10-18 18:17:19.773] [info] [ASSOC_M] det0 range=4.18m yaw=-65.3deg | f0:cost=-0.09 ang=-3 px=1 pred_r=4.18 | f1:cost=16.42 ang=-93 px=206 pred_r=4.41 | f2:cost=16.08 ang=+177 px=39 pred_r=4.69 | f3:cost=11.12 ang=+87 px=160 pred_r=4.48 |
+[2026-10-18 18:17:19.986] [info] [DRYRUN] measured_gimbal=(4.200,0.136,-0.160) measured_world=(2.446,-3.420,0.044) tracked_world=(2.439,-3.412,0.044) target_gimbal_deg=(1.86,-2.18) target_world_deg=(-54.43,0.60) gimbal_deg=(-56.28,-2.79) armor_y_px=666.7 pixel_error_deg=(-1.58,2.77) ballistic=(range=4.193m holdover=0.179m comp=2.41deg residual=0.37deg) center_lead=0.00deg center_follow=false q_wxyz=(0.881525,0.011476,-0.021455,0.471510) cmd_deg=(-54.93,-2.29) packed_pitch_deg=-2.29 yaw_pi=(error=nandeg integral=0.00deg output=0.00deg) control=true shoot=false
+[2026-10-18 18:17:20.040] [info] [ASSOC] primary_face=0 matches=1 cost=-0.088 detections=1 confidence=0.91
+[2026-10-18 18:17:20.041] [info] [ASSOC_D] det=0 face0 cost=-0.088 align=7.9deg conf=0.91
+[2026-10-18 18:17:20.041] [info] [ASSOC_D] gate: total_det=1 cand=1 drop_name=0 drop_type=0 reject_cost=3 best_rejected=(det0,face3,cost=11.08) limit=0.80
+[2026-10-18 18:17:20.041] [info] [ASSOC_D] near-miss det0 face3 cost=11.08 = centre 2.71^2->7.32 + angle 4.38^2*0.20->3.83 + range 0.29^2*0.20->0.02 - conf 0.09 | pixels=159.4 scale=58.9 angle_deg=87.5
+[2026-10-18 18:17:20.041] [info] [ASSOC_D] ekf r=0.260 l=0.040 h=0.000 yaw=-62.8deg omega=-0.079
+[2026-10-18 18:17:20.041] [info] [ASSOC_M] det0 range=4.18m yaw=-65.3deg | f0:cost=-0.09 ang=-2 px=0 pred_r=4.19 | f1:cost=16.34 ang=-92 px=205 pred_r=4.41 | f2:cost=16.18 ang=+178 px=40 pred_r=4.70 | f3:cost=11.08 ang=+88 px=159 pred_r=4.50 |
+[2026-10-18 18:17:20.309] [info] [ASSOC] primary_face=0 matches=1 cost=-0.085 detections=1 confidence=0.88
+[2026-10-18 18:17:20.309] [info] [ASSOC_D] det=0 face0 cost=-0.085 align=9.1deg conf=0.88
+[2026-10-18 18:17:20.309] [info] [ASSOC_D] gate: total_det=1 cand=1 drop_name=0 drop_type=0 reject_cost=3 best_rejected=(det0,face3,cost=10.75) limit=0.80
+[2026-10-18 18:17:20.309] [info] [ASSOC_D] near-miss det0 face3 cost=10.75 = centre 2.64^2->6.97 + angle 4.39^2*0.20->3.85 + range 0.30^2*0.20->0.02 - conf 0.09 | pixels=155.6 scale=58.9 angle_deg=87.8
+[2026-10-18 18:17:20.309] [info] [ASSOC_D] ekf r=0.260 l=0.040 h=0.000 yaw=-64.0deg omega=-0.086
+[2026-10-18 18:17:20.309] [info] [ASSOC_M] det0 range=4.18m yaw=-66.3deg | f0:cost=-0.08 ang=-2 px=1 pred_r=4.20 | f1:cost=16.57 ang=-92 px=207 pred_r=4.42 | f2:cost=16.37 ang=+178 px=46 pred_r=4.71 | f3:cost=10.75 ang=+88 px=156 pred_r=4.51 |
+[2026-10-18 18:17:20.537] [info] [DRYRUN] measured_gimbal=(4.151,0.135,-0.158) measured_world=(2.418,-3.380,0.044) tracked_world=(2.439,-3.408,0.044) target_gimbal_deg=(1.87,-2.18) target_world_deg=(-54.42,0.61) gimbal_deg=(-56.28,-2.79) armor_y_px=666.7 pixel_error_deg=(-1.58,2.77) ballistic=(range=4.200m holdover=0.179m comp=2.41deg residual=0.36deg) center_lead=0.00deg center_follow=false q_wxyz=(0.881525,0.011476,-0.021455,0.471510) cmd_deg=(-54.93,-2.30) packed_pitch_deg=-2.30 yaw_pi=(error=nandeg integral=0.00deg output=0.00deg) control=true shoot=false
+[2026-10-18 18:17:20.590] [info] [ASSOC] primary_face=0 matches=1 cost=-0.087 detections=1 confidence=0.88
+[2026-10-18 18:17:20.590] [info] [ASSOC_D] det=0 face0 cost=-0.087 align=8.2deg conf=0.88
+[2026-10-18 18:17:20.590] [info] [ASSOC_D] gate: total_det=1 cand=1 drop_name=0 drop_type=0 reject_cost=3 best_rejected=(det0,face3,cost=11.19) limit=0.80
+[2026-10-18 18:17:20.590] [info] [ASSOC_D] near-miss det0 face3 cost=11.19 = centre 2.67^2->7.14 + angle 4.54^2*0.20->4.13 + range 0.30^2*0.20->0.02 - conf 0.09 | pixels=158.3 scale=59.2 angle_deg=90.9
+[2026-10-18 18:17:20.590] [info] [ASSOC_D] ekf r=0.260 l=0.040 h=0.000 yaw=-63.2deg omega=-0.002
+[2026-10-18 18:17:20.591] [info] [ASSOC_M] det0 range=4.18m yaw=-62.3deg | f0:cost=-0.09 ang=+1 px=0 pred_r=4.19 | f1:cost=15.95 ang=-89 px=206 pred_r=4.42 | f2:cost=16.50 ang=-179 px=42 pred_r=4.71 | f3:cost=11.19 ang=+91 px=158 pred_r=4.50 |
+[2026-10-18 18:17:20.880] [info] [ASSOC] primary_face=0 matches=1 cost=-0.079 detections=1 confidence=0.89
+[2026-10-18 18:17:20.881] [info] [ASSOC_D] det=0 face0 cost=-0.079 align=7.9deg conf=0.89
+[2026-10-18 18:17:20.881] [info] [ASSOC_D] gate: total_det=1 cand=1 drop_name=0 drop_type=0 reject_cost=3 best_rejected=(det0,face3,cost=10.82) limit=0.80
+[2026-10-18 18:17:20.881] [info] [ASSOC_D] near-miss det0 face3 cost=10.82 = centre 2.69^2->7.23 + angle 4.28^2*0.20->3.66 + range 0.30^2*0.20->0.02 - conf 0.09 | pixels=158.4 scale=58.9 angle_deg=85.6
+[2026-10-18 18:17:20.881] [info] [ASSOC_D] ekf r=0.260 l=0.040 h=0.000 yaw=-62.9deg omega=+0.049
+[2026-10-18 18:17:20.881] [info] [ASSOC_M] det0 range=4.17m yaw=-67.3deg | f0:cost=-0.08 ang=-4 px=1 pred_r=4.19 | f1:cost=16.59 ang=-94 px=206 pred_r=4.42 | f2:cost=15.86 ang=+176 px=41 pred_r=4.71 | f3:cost=10.82 ang=+86 px=158 pred_r=4.50 |
+[2026-10-18 18:17:21.084] [info] [SYNC][XUC] mode=0 yaw=56.28 deg pitch=-2.79 deg feeder_rpm=0.00 wheel0_rpm=0 wheel1_rpm=0 wheel_delta=0 projectile_speed=19.00 gate=0x00 switch=0 rc=0 sticks=0 imu=0 serial=0 control=0 yaw_armed=0 pitch_active=0
+[2026-10-18 18:17:21.102] [info] [YAWESKF] trusted=1 angle=-1.118 omega=-0.009 alpha=+0.051 raw_ekf_omega=-0.010 nis=0.01 accepted=98 rejected=0 whole_iekf_nis=0.06 armor_cv_trusted=1 armor_v=(-0.01,+0.02,-0.00) armor_cv_nis=0.17
+[2026-10-18 18:17:21.102] [info] [RANGE] raw=4.160m model=4.185m filtered=4.187m model_used=1 raw_limited=0
+[2026-10-18 18:17:21.102] [info] [DRYRUN] measured_gimbal=(4.155,0.136,-0.158) measured_world=(2.421,-3.383,0.044) tracked_world=(2.435,-3.403,0.044) target_gimbal_deg=(1.87,-2.18) target_world_deg=(-54.41,0.61) gimbal_deg=(-56.28,-2.79) armor_y_px=666.7 pixel_error_deg=(-1.59,2.77) ballistic=(range=4.187m holdover=0.178m comp=2.40deg residual=0.37deg) center_lead=0.00deg center_follow=false q_wxyz=(0.881525,0.011476,-0.021455,0.471510) cmd_deg=(-54.93,-2.29) packed_pitch_deg=-2.29 yaw_pi=(error=nandeg integral=0.00deg output=0.00deg) control=true shoot=false
+[2026-10-18 18:17:21.105] [info] [PERF] 总耗时=21.3ms (检测=17.7ms, 跟踪=0.4ms), FPS=47.0
+[2026-10-18 18:17:21.105] [info] 📊 [CAMERA FPS] 瞬时帧率=46.4fps, 平均帧率=32.0fps, 总帧数=100, 运行时间=3.1s
+[2026-10-18 18:17:21.172] [info] [ASSOC] primary_face=0 matches=1 cost=-0.084 detections=1 confidence=0.89
+[2026-10-18 18:17:21.172] [info] [ASSOC_D] det=0 face0 cost=-0.084 align=9.2deg conf=0.89
+[2026-10-18 18:17:21.172] [info] [ASSOC_D] gate: total_det=1 cand=1 drop_name=0 drop_type=0 reject_cost=3 best_rejected=(det0,face3,cost=10.57) limit=0.80
+[2026-10-18 18:17:21.172] [info] [ASSOC_D] near-miss det0 face3 cost=10.57 = centre 2.62^2->6.87 + angle 4.34^2*0.20->3.77 + range 0.32^2*0.20->0.02 - conf 0.09 | pixels=155.2 scale=59.2 angle_deg=86.9
+[2026-10-18 18:17:21.173] [info] [ASSOC_D] ekf r=0.260 l=0.040 h=0.000 yaw=-64.1deg omega=-0.011
+[2026-10-18 18:17:21.173] [info] [ASSOC_M] det0 range=4.15m yaw=-67.3deg | f0:cost=-0.08 ang=-3 px=0 pred_r=4.18 | f1:cost=16.74 ang=-93 px=209 pred_r=4.40 | f2:cost=16.24 ang=+177 px=48 pred_r=4.69 | f3:cost=10.57 ang=+87 px=155 pred_r=4.49 |
+[2026-10-18 18:17:21.458] [info] [ASSOC] primary_face=0 matches=1 cost=-0.079 detections=1 confidence=0.86
+[2026-10-18 18:17:21.458] [info] [ASSOC_D] det=0 face0 cost=-0.079 align=9.1deg conf=0.86
+[2026-10-18 18:17:21.458] [info] [ASSOC_D] gate: total_det=1 cand=1 drop_name=0 drop_type=0 reject_cost=3 best_rejected=(det0,face3,cost=11.16) limit=0.80
+[2026-10-18 18:17:21.458] [info] [ASSOC_D] near-miss det0 face3 cost=11.16 = centre 2.61^2->6.83 + angle 4.69^2*0.20->4.40 + range 0.30^2*0.20->0.02 - conf 0.09 | pixels=154.8 scale=59.2 angle_deg=93.8
+[2026-10-18 18:17:21.458] [info] [ASSOC_D] ekf r=0.260 l=0.040 h=0.000 yaw=-64.1deg omega=+0.005
+[2026-10-18 18:17:21.458] [info] [ASSOC_M] det0 range=4.18m yaw=-60.3deg | f0:cost=-0.08 ang=+4 px=0 pred_r=4.19 | f1:cost=16.03 ang=-86 px=209 pred_r=4.41 | f2:cost=16.11 ang=-176 px=47 pred_r=4.71 | f3:cost=11.16 ang=+94 px=155 pred_r=4.51 |
+[2026-10-18 18:17:21.691] [info] [DRYRUN] measured_gimbal=(4.153,0.135,-0.158) measured_world=(2.419,-3.382,0.044) tracked_world=(2.425,-3.391,0.044) target_gimbal_deg=(1.86,-2.18) target_world_deg=(-54.42,0.61) gimbal_deg=(-56.28,-2.79) armor_y_px=666.7 pixel_error_deg=(-1.57,2.77) ballistic=(range=4.175m holdover=0.177m comp=2.39deg residual=0.38deg) center_lead=0.00deg center_follow=false q_wxyz=(0.881525,0.011476,-0.021455,0.471510) cmd_deg=(-54.92,-2.28) packed_pitch_deg=-2.28 yaw_pi=(error=nandeg integral=0.00deg output=0.00deg) control=true shoot=false
+[2026-10-18 18:17:21.751] [info] [ASSOC] primary_face=0 matches=1 cost=-0.084 detections=1 confidence=0.88
+[2026-10-18 18:17:21.751] [info] [ASSOC_D] det=0 face0 cost=-0.084 align=7.8deg conf=0.88
+[2026-10-18 18:17:21.751] [info] [ASSOC_D] gate: total_det=1 cand=1 drop_name=0 drop_type=0 reject_cost=3 best_rejected=(det0,face3,cost=11.19) limit=0.80
+[2026-10-18 18:17:21.751] [info] [ASSOC_D] near-miss det0 face3 cost=11.19 = centre 2.73^2->7.44 + angle 4.37^2*0.20->3.82 + range 0.26^2*0.20->0.01 - conf 0.09 | pixels=160.7 scale=58.9 angle_deg=87.4
+[2026-10-18 18:17:21.751] [info] [ASSOC_D] ekf r=0.260 l=0.040 h=0.000 yaw=-62.7deg omega=-0.049
+[2026-10-18 18:17:21.751] [info] [ASSOC_M] det0 range=4.19m yaw=-65.3deg | f0:cost=-0.08 ang=-3 px=0 pred_r=4.16 | f1:cost=16.45 ang=-93 px=206 pred_r=4.39 | f2:cost=16.14 ang=+177 px=40 pred_r=4.68 | f3:cost=11.19 ang=+87 px=161 pred_r=4.47 |
+[2026-10-18 18:17:22.026] [info] [ASSOC] primary_face=0 matches=1 cost=-0.068 detections=1 confidence=0.89
+[2026-10-18 18:17:22.026] [info] [ASSOC_D] det=0 face0 cost=-0.068 align=12.4deg conf=0.89
+[2026-10-18 18:17:22.026] [info] [ASSOC_D] gate: total_det=1 cand=1 drop_name=0 drop_type=0 reject_cost=3 best_rejected=(det0,face3,cost=10.67) limit=0.80
+[2026-10-18 18:17:22.026] [info] [ASSOC_D] near-miss det0 face3 cost=10.67 = centre 2.47^2->6.12 + angle 4.81^2*0.20->4.63 + range 0.27^2*0.20->0.01 - conf 0.09 | pixels=145.7 scale=58.9 angle_deg=96.2
+[2026-10-18 18:17:22.026] [info] [ASSOC_D] ekf r=0.260 l=0.040 h=0.000 yaw=-67.5deg omega=-0.309
+[2026-10-18 18:17:22.026] [info] [ASSOC_M] det0 range=4.21m yaw=-61.3deg | f0:cost=-0.07 ang=+6 px=2 pred_r=4.17 | f1:cost=16.86 ang=-84 px=216 pred_r=4.37 | f2:cost=16.20 ang=-174 px=63 pred_r=4.68 | f3:cost=10.67 ang=+96 px=146 pred_r=4.50 |
+[2026-10-18 18:17:22.251] [info] [DRYRUN] measured_gimbal=(4.171,0.136,-0.159) measured_world=(2.430,-3.397,0.044) tracked_world=(2.441,-3.414,0.044) target_gimbal_deg=(1.86,-2.18) target_world_deg=(-54.42,0.60) gimbal_deg=(-56.28,-2.79) armor_y_px=666.7 pixel_error_deg=(-1.58,2.77) ballistic=(range=4.197m holdover=0.179m comp=2.41deg residual=0.36deg) center_lead=0.00deg center_follow=false q_wxyz=(0.881525,0.011476,-0.021455,0.471510) cmd_deg=(-54.94,-2.29) packed_pitch_deg=-2.29 yaw_pi=(error=nandeg integral=0.00deg output=0.00deg) control=true shoot=false
+[2026-10-18 18:17:22.304] [info] [ASSOC] primary_face=0 matches=1 cost=-0.078 detections=1 confidence=0.87
+[2026-10-18 18:17:22.304] [info] [ASSOC_D] det=0 face0 cost=-0.078 align=6.3deg conf=0.87
+[2026-10-18 18:17:22.304] [info] [ASSOC_D] gate: total_det=1 cand=1 drop_name=0 drop_type=0 reject_cost=3 best_rejected=(det0,face3,cost=11.32) limit=0.80
+[2026-10-18 18:17:22.304] [info] [ASSOC_D] near-miss det0 face3 cost=11.32 = centre 2.78^2->7.71 + angle 4.29^2*0.20->3.68 + range 0.29^2*0.20->0.02 - conf 0.09 | pixels=163.6 scale=58.9 angle_deg=85.8
+[2026-10-18 18:17:22.304] [info] [ASSOC_D] ekf r=0.260 l=0.040 h=0.000 yaw=-61.1deg omega=+0.185
+[2026-10-18 18:17:22.304] [info] [ASSOC_M] det0 range=4.18m yaw=-65.3deg | f0:cost=-0.08 ang=-4 px=1 pred_r=4.20 | f1:cost=16.00 ang=-94 px=201 pred_r=4.44 | f2:cost=15.72 ang=+176 px=32 pred_r=4.72 | f3:cost=11.32 ang=+86 px=164 pred_r=4.50 |
+[2026-10-18 18:17:22.504] [info] [SYNC][XUC] mode=0 yaw=56.28 deg pitch=-2.79 deg feeder_rpm=0.00 wheel0_rpm=0 wheel1_rpm=0 wheel_delta=0 projectile_speed=19.00 gate=0x00 switch=0 rc=0 sticks=0 imu=0 serial=0 control=0 yaw_armed=0 pitch_active=0
+[2026-10-18 18:17:22.526] [info] [YAWESKF] trusted=1 angle=-1.087 omega=+0.011 alpha=-0.113 raw_ekf_omega=-0.005 nis=0.26 accepted=148 rejected=0 whole_iekf_nis=0.27 armor_cv_trusted=1 armor_v=(-0.02,+0.03,-0.00) armor_cv_nis=0.13
+[2026-10-18 18:17:22.526] [info] [RANGE] raw=4.165m model=4.187m filtered=4.190m model_used=1 raw_limited=0
+[2026-10-18 18:17:22.530] [info] [PERF] 总耗时=25.3ms (检测=21.3ms, 跟踪=0.5ms), FPS=39.5
+[2026-10-18 18:17:22.530] [info] 📊 [CAMERA FPS] 瞬时帧率=39.4fps, 平均帧率=33.0fps, 总帧数=150, 运行时间=4.5s
+[2026-10-18 18:17:22.584] [info] [ASSOC] primary_face=0 matches=1 cost=-0.081 detections=1 confidence=0.88
+[2026-10-18 18:17:22.584] [info] [ASSOC_D] det=0 face0 cost=-0.081 align=5.9deg conf=0.88
+[2026-10-18 18:17:22.584] [info] [ASSOC_D] gate: total_det=1 cand=1 drop_name=0 drop_type=0 reject_cost=3 best_rejected=(det0,face3,cost=11.43) limit=0.80
+[2026-10-18 18:17:22.584] [info] [ASSOC_D] near-miss det0 face3 cost=11.43 = centre 2.79^2->7.77 + angle 4.32^2*0.20->3.73 + range 0.30^2*0.20->0.02 - conf 0.09 | pixels=165.1 scale=59.2 angle_deg=86.4
+[2026-10-18 18:17:22.584] [info] [ASSOC_D] ekf r=0.260 l=0.040 h=0.000 yaw=-60.7deg omega=+0.131
+[2026-10-18 18:17:22.584] [info] [ASSOC_M] det0 range=4.16m yaw=-64.3deg | f0:cost=-0.08 ang=-4 px=1 pred_r=4.19 | f1:cost=15.80 ang=-94 px=201 pred_r=4.42 | f2:cost=15.78 ang=+176 px=30 pred_r=4.70 | f3:cost=11.43 ang=+86 px=165 pred_r=4.49 |
+[2026-10-18 18:17:22.813] [info] [DRYRUN] measured_gimbal=(4.205,0.136,-0.161) measured_world=(2.449,-3.424,0.044) tracked_world=(2.435,-3.403,0.044) target_gimbal_deg=(1.85,-2.19) target_world_deg=(-54.43,0.60) gimbal_deg=(-56.28,-2.79) armor_y_px=666.7 pixel_error_deg=(-1.57,2.77) ballistic=(range=4.183m holdover=0.178m comp=2.40deg residual=0.37deg) center_lead=0.00deg center_follow=false q_wxyz=(0.881525,0.011476,-0.021455,0.471510) cmd_deg=(-54.92,-2.28) packed_pitch_deg=-2.28 yaw_pi=(error=nandeg integral=0.00deg output=0.00deg) control=true shoot=false
+[2026-10-18 18:17:22.871] [info] [ASSOC] primary_face=0 matches=1 cost=-0.089 detections=1 confidence=0.89
+[2026-10-18 18:17:22.871] [info] [ASSOC_D] det=0 face0 cost=-0.089 align=7.5deg conf=0.89
+[2026-10-18 18:17:22.871] [info] [ASSOC_D] gate: total_det=1 cand=1 drop_name=0 drop_type=0 reject_cost=3 best_rejected=(det0,face3,cost=11.39) limit=0.80
+[2026-10-18 18:17:22.871] [info] [ASSOC_D] near-miss det0 face3 cost=11.39 = centre 2.72^2->7.40 + angle 4.51^2*0.20->4.06 + range 0.28^2*0.20->0.02 - conf 0.09 | pixels=160.3 scale=58.9 angle_deg=90.1
+[2026-10-18 18:17:22.871] [info] [ASSOC_D] ekf r=0.260 l=0.040 h=0.000 yaw=-62.4deg omega=-0.013
+[2026-10-18 18:17:22.871] [info] [ASSOC_M] det0 range=4.20m yaw=-62.3deg | f0:cost=-0.09 ang=+0 px=0 pred_r=4.20 | f1:cost=15.92 ang=-90 px=204 pred_r=4.43 | f2:cost=16.56 ang=-180 px=38 pred_r=4.71 | f3:cost=11.39 ang=+90 px=160 pred_r=4.50 |
+[2026-10-18 18:17:23.153] [info] [ASSOC] primary_face=0 matches=1 cost=-0.073 detections=1 confidence=0.88
+[2026-10-18 18:17:23.153] [info] [ASSOC_D] det=0 face0 cost=-0.073 align=8.9deg conf=0.88
+[2026-10-18 18:17:23.153] [info] [ASSOC_D] gate: total_det=1 cand=1 drop_name=0 drop_type=0 reject_cost=3 best_rejected=(det0,face3,cost=10.47) limit=0.80
+[2026-10-18 18:17:23.153] [info] [ASSOC_D] near-miss det0 face3 cost=10.47 = centre 2.64^2->6.96 + angle 4.23^2*0.20->3.57 + range 0.35^2*0.20->0.02 - conf 0.09 | pixels=156.3 scale=59.2 angle_deg=84.6
+[2026-10-18 18:17:23.153] [info] [ASSOC_D] ekf r=0.260 l=0.040 h=0.000 yaw=-63.8deg omega=-0.060
+[2026-10-18 18:17:23.153] [info] [ASSOC_M] det0 range=4.13m yaw=-69.3deg | f0:cost=-0.07 ang=-5 px=0 pred_r=4.19 | f1:cost=16.77 ang=-95 px=208 pred_r=4.41 | f2:cost=15.79 ang=+175 px=45 pred_r=4.70 | f3:cost=10.47 ang=+85 px=156 pred_r=4.50 |
+[2026-10-18 18:17:23.374] [info] [DRYRUN] measured_gimbal=(4.311,0.137,-0.165) measured_world=(2.508,-3.513,0.045) tracked_world=(2.454,-3.439,0.044) target_gimbal_deg=(1.82,-2.20) target_world_deg=(-54.47,0.59) gimbal_deg=(-56.28,-2.79) armor_y_px=666.7 pixel_error_deg=(-1.55,2.77) ballistic=(range=4.193m holdover=0.179m comp=2.40deg residual=0.37deg) center_lead=0.00deg center_follow=false q_wxyz=(0.881525,0.011476,-0.021455,0.471510) cmd_deg=(-54.95,-2.28) packed_pitch_deg=-2.28 yaw_pi=(error=nandeg integral=0.00deg output=0.00deg) control=true shoot=false
+[2026-10-18 18:17:23.441] [info] [ASSOC] primary_face=0 matches=1 cost=-0.034 detections=1 confidence=0.88
+[2026-10-18 18:17:23.441] [info] [ASSOC_D] det=0 face0 cost=-0.034 align=6.4deg conf=0.88
+[2026-10-18 18:17:23.441] [info] [ASSOC_D] gate: total_det=1 cand=1 drop_name=0 drop_type=0 reject_cost=3 best_rejected=(det0,face3,cost=10.61) limit=0.80
+[2026-10-18 18:17:23.441] [info] [ASSOC_D] near-miss det0 face3 cost=10.61 = centre 2.73^2->7.47 + angle 4.00^2*0.20->3.20 + range 0.41^2*0.20->0.03 - conf 0.09 | pixels=164.9 scale=60.3 angle_deg=80.0
+[2026-10-18 18:17:23.441] [info] [ASSOC_D] ekf r=0.260 l=0.040 h=0.000 yaw=-61.3deg omega=+0.229
+[2026-10-18 18:17:23.441] [info] [ASSOC_M] det0 range=4.07m yaw=-71.3deg | f0:cost=-0.03 ang=-10 px=1 pred_r=4.21 | f1:cost=15.77 ang=-100 px=199 pred_r=4.45 | f2:cost=14.69 ang=+170 px=31 pred_r=4.73 | f3:cost=10.61 ang=+80 px=165 pred_r=4.51 |
+[2026-10-18 18:17:23.717] [info] [ASSOC] primary_face=0 matches=1 cost=0.035 detections=1 confidence=0.87
+[2026-10-18 18:17:23.717] [info] [ASSOC_D] det=0 face0 cost=0.035 align=4.2deg conf=0.87
+[2026-10-18 18:17:23.717] [info] [ASSOC_D] gate: total_det=1 cand=1 drop_name=0 drop_type=0 reject_cost=3 best_rejected=(det0,face1,cost=13.62) limit=0.80
+[2026-10-18 18:17:23.717] [info] [ASSOC_D] near-miss det0 face1 cost=13.62 = centre 2.85^2->8.12 + angle 5.28^2*0.20->5.58 + range 0.29^2*0.20->0.02 - conf 0.09 | pixels=171.9 scale=60.3 angle_deg=105.6
+[2026-10-18 18:17:23.717] [info] [ASSOC_D] ekf r=0.260 l=0.040 h=0.000 yaw=-51.7deg omega=+0.714
+[2026-10-18 18:17:23.717] [info] [ASSOC_M] det0 range=4.06m yaw=-67.3deg | f0:cost=0.04 ang=-16 px=1 pred_r=4.07 | f1:cost=13.62 ang=-106 px=172 pred_r=4.36 | f2:cost=13.71 ang=+164 px=29 pred_r=4.59 | f3:cost=14.26 ang=+74 px=205 pred_r=4.31 |
+[2026-10-18 18:17:23.923] [info] [SYNC][XUC] mode=0 yaw=56.28 deg pitch=-2.79 deg feeder_rpm=0.00 wheel0_rpm=0 wheel1_rpm=0 wheel_delta=0 projectile_speed=19.00 gate=0x00 switch=0 rc=0 sticks=0 imu=0 serial=0 control=0 yaw_armed=0 pitch_active=0
+[2026-10-18 18:17:23.954] [info] [YAWESKF] trusted=1 angle=-0.710 omega=+1.163 alpha=+1.903 raw_ekf_omega=+0.860 nis=0.17 accepted=198 rejected=0 whole_iekf_nis=0.42 armor_cv_trusted=1 armor_v=(-0.03,-0.85,+0.01) armor_cv_nis=0.61
+[2026-10-18 18:17:23.954] [info] [RANGE] raw=4.327m model=4.281m filtered=4.220m model_used=1 raw_limited=0
+[2026-10-18 18:17:23.955] [info] [XUC][YAW] final slew limiter active: max_rate=30.0 deg/s
+[2026-10-18 18:17:23.955] [info] [DRYRUN] measured_gimbal=(4.323,-0.100,-0.161) measured_world=(2.318,-3.654,0.049) tracked_world=(2.285,-3.620,0.049) target_gimbal_deg=(-1.33,-2.13) target_world_deg=(-57.61,0.65) gimbal_deg=(-56.28,-2.79) armor_y_px=664.1 pixel_error_deg=(1.74,2.71) ballistic=(range=4.220m holdover=0.181m comp=2.42deg residual=0.29deg) center_lead=0.00deg center_follow=false q_wxyz=(0.881525,0.011476,-0.021455,0.471510) cmd_deg=(-56.28,-2.35) packed_pitch_deg=-2.35 yaw_pi=(error=nandeg integral=0.00deg output=0.00deg) control=true shoot=false
+[2026-10-18 18:17:23.958] [info] [PERF] 总耗时=35.5ms (检测=29.4ms, 跟踪=1.3ms), FPS=28.2
+[2026-10-18 18:17:23.959] [info] 📊 [CAMERA FPS] 瞬时帧率=28.1fps, 平均帧率=33.5fps, 总帧数=200, 运行时间=6.0s
+[2026-10-18 18:17:23.959] [info] Switch to auto_aim
+[2026-10-18 18:17:23.984] [info] [XUC][FIRE] stable-window candidate started
+[2026-10-18 18:17:24.019] [info] [ASSOC] primary_face=0 matches=1 cost=-0.012 detections=2 confidence=0.90
+[2026-10-18 18:17:24.019] [info] [ASSOC_D] det=1 face0 cost=-0.012 align=22.9deg conf=0.90
+[2026-10-18 18:17:24.019] [info] [ASSOC_D] gate: total_det=2 cand=1 drop_name=0 drop_type=0 reject_cost=7 best_rejected=(det0,face3,cost=1.23) limit=0.80
+[2026-10-18 18:17:24.019] [info] [ASSOC_D] near-miss det0 face3 cost=1.23 = centre 1.02^2->1.04 + angle 1.19^2*0.20->0.28 + range 0.15^2*0.20->0.00 - conf 0.09 | pixels=48.0 scale=47.1 angle_deg=23.7
+[2026-10-18 18:17:24.019] [info] [ASSOC_D] ekf r=0.260 l=0.040 h=0.000 yaw=-34.0deg omega=+1.447
+[2026-10-18 18:17:24.019] [info] [ASSOC_M] det0 range=4.65m yaw=-100.3deg | f0:cost=37.47 ang=-66 px=280 pred_r=4.35 | f1:cost=75.39 ang=-156 px=375 pred_r=4.71 | f2:cost=17.43 ang=+114 px=157 pred_r=4.83 | f3:cost=1.23 ang=+24 px=48 pred_r=4.48 |
+[2026-10-18 18:17:24.019] [info] [ASSOC_M] det1 range=4.36m yaw=-25.3deg | f0:cost=-0.01 ang=+9 px=11 pred_r=4.35 | f1:cost=6.85 ang=-81 px=106 pred_r=4.71 | f2:cost=18.73 ang=-171 px=113 pred_r=4.83 | f3:cost=20.68 ang=+99 px=221 pred_r=4.48 |
+[2026-10-18 18:17:24.081] [info] [XUC][FIRE] qualified after 100 ms/4 frames, current_pixel_error_deg=(2.40,-0.04) predicted_impact_yaw_error_deg=inf gyro_predict=false face_error=61.01deg committed_face=-1 face_align=infdeg phase_unc=nandeg gimbal_err=infdeg omega=+1.938rad_s armed=true
+[2026-10-18 18:17:24.081] [info] [SHOT] id=1 issue mode=1 gyro=0 event=0 cycle=-1 processing_age_ms=38.2 due_error_ms=+nan period_ms=nan window_deg=nan worst_deg=nan combined_deg=nan face=-1 face_align_deg=inf phase_unc_deg=nan gimbal_err_deg=inf
+[2026-10-18 18:17:24.083] [info] [SYNC][XUC] mode=1 yaw=56.57 deg pitch=-2.54 deg feeder_rpm=0.00 wheel0_rpm=6280 wheel1_rpm=6240 wheel_delta=40 projectile_speed=19.00 gate=0x00 switch=0 rc=0 sticks=0 imu=0 serial=0 control=0 yaw_armed=0 pitch_active=0
+[2026-10-18 18:17:24.101] [info] [XUC][FIRE] request inhibited until cadence fallback interval elapses
+[2026-10-18 18:17:24.101] [info] [XUC][FIRE] stable window reset
+[2026-10-18 18:17:24.105] [info] [SHOTADAPT] id=1 feeder_ms=21.84 samples=1 ready=0 delay_ms=85.00 pi95_ms=[65.00,105.00]
+[2026-10-18 18:17:24.105] [info] [SHOT] id=1 feeder_start command_to_feeder_ms=21.84 rpm=545
+[2026-10-18 18:17:24.226] [info] [SHOT] id=1 feeder_stop feeder_motion_ms=109.8
+[2026-10-18 18:17:24.226] [info] [XUC][FIRE] feeder stopped; post-feed hold=550 ms
+[2026-10-18 18:17:24.226] [info] [SYNC][XUC] mode=1 yaw=60.80 deg pitch=-2.52 deg feeder_rpm=139.00 wheel0_rpm=6120 wheel1_rpm=6040 wheel_delta=80 projectile_speed=19.00 gate=0x00 switch=0 rc=0 sticks=0 imu=0 serial=0 control=0 yaw_armed=0 pitch_active=0
+[2026-10-18 18:17:24.264] [info] [XUC][FIRE] feeder stopped; post-feed hold=550 ms
+[2026-10-18 18:17:24.320] [info] [ASSOC] primary_face=3 matches=1 cost=0.239 detections=1 confidence=0.85
+[2026-10-18 18:17:24.320] [info] [ASSOC_D] det=0 face3 cost=0.239 align=1.5deg conf=0.85
+[2026-10-18 18:17:24.320] [info] [ASSOC_D] gate: total_det=1 cand=1 drop_name=0 drop_type=0 reject_cost=3 best_rejected=(det0,face2,cost=6.67) limit=0.80
+[2026-10-18 18:17:24.320] [info] [ASSOC_D] near-miss det0 face2 cost=6.67 = centre 1.84^2->3.38 + angle 4.08^2*0.20->3.34 + range 0.43^2*0.20->0.04 - conf 0.08 | pixels=119.2 scale=64.8 angle_deg=81.7
+[2026-10-18 18:17:24.321] [info] [ASSOC_D] ekf r=0.279 l=0.082 h=-0.004 yaw=33.5deg omega=+4.284  <<< L/H NONZERO
+[2026-10-18 18:17:24.321] [info] [ASSOC_M] det0 range=4.35m yaw=-64.9deg | f0:cost=13.92 ang=-98 px=196 pred_r=4.83 | f1:cost=15.18 ang=+172 px=42 pred_r=5.19 | f2:cost=6.67 ang=+82 px=119 pred_r=4.85 | f3:cost=0.24 ang=-8 px=35 pred_r=4.47 |
+[2026-10-18 18:17:24.368] [info] [SYNC][XUC] mode=1 yaw=55.17 deg pitch=-2.43 deg feeder_rpm=0.00 wheel0_rpm=5880 wheel1_rpm=5960 wheel_delta=-80 projectile_speed=19.00 gate=0x00 switch=0 rc=0 sticks=0 imu=0 serial=0 control=0 yaw_armed=0 pitch_active=0
+[2026-10-18 18:17:24.513] [info] [SYNC][XUC] mode=1 yaw=58.91 deg pitch=-2.34 deg feeder_rpm=-4.00 wheel0_rpm=5720 wheel1_rpm=5720 wheel_delta=0 projectile_speed=19.00 gate=0x00 switch=0 rc=0 sticks=0 imu=0 serial=0 control=0 yaw_armed=0 pitch_active=0
+[2026-10-18 18:17:24.534] [info] [DRYRUN] measured_gimbal=(4.051,0.249,-0.129) measured_world=(2.306,-3.343,0.037) tracked_world=(2.678,-4.119,0.049) target_gimbal_deg=(3.51,-1.82) target_world_deg=(-55.40,0.52) gimbal_deg=(-58.91,-2.34) armor_y_px=649.7 pixel_error_deg=(-3.30,2.40) ballistic=(range=4.128m holdover=0.173m comp=2.37deg residual=0.03deg) center_lead=0.00deg center_follow=false q_wxyz=(0.870546,0.010037,-0.017771,0.491664) cmd_deg=(-53.26,-2.39) packed_pitch_deg=-2.39 yaw_pi=(error=nandeg integral=0.00deg output=0.00deg) control=true shoot=false
+[2026-10-18 18:17:24.642] [info] [SYNC][XUC] mode=1 yaw=52.12 deg pitch=-2.43 deg feeder_rpm=0.00 wheel0_rpm=5640 wheel1_rpm=5880 wheel_delta=-240 projectile_speed=19.00 gate=0x00 switch=0 rc=0 sticks=0 imu=0 serial=0 control=0 yaw_armed=0 pitch_active=0
+[2026-10-18 18:17:24.790] [info] [SYNC][XUC] mode=1 yaw=58.39 deg pitch=-2.27 deg feeder_rpm=-4.00 wheel0_rpm=5880 wheel1_rpm=6000 wheel_delta=-120 projectile_speed=19.00 gate=0x00 switch=0 rc=0 sticks=0 imu=0 serial=0 control=0 yaw_armed=0 pitch_active=0
+[2026-10-18 18:17:24.887] [info] [ASSOC] primary_face=2 matches=2 cost=0.136 detections=2 confidence=0.59
+[2026-10-18 18:17:24.887] [info] [ASSOC_D] det=0 face1 cost=0.380 align=51.6deg conf=0.12
+[2026-10-18 18:17:24.887] [info] [ASSOC_D] det=1 face2 cost=0.136 align=38.4deg conf=0.59
+[2026-10-18 18:17:24.887] [info] [ASSOC_D] gate: total_det=2 cand=2 drop_name=0 drop_type=0 reject_cost=6 best_rejected=(det1,face3,cost=6.22) limit=0.80
+[2026-10-18 18:17:24.887] [info] [ASSOC_D] near-miss det1 face3 cost=6.22 = centre 1.14^2->1.31 + angle 4.98^2*0.20->4.96 + range 0.25^2*0.20->0.01 - conf 0.06 | pixels=66.3 scale=57.9 angle_deg=99.6
+[2026-10-18 18:17:24.887] [info] [ASSOC_D]  selected: det0->face1 (0.380) det1->face2 (0.136)
+[2026-10-18 18:17:24.887] [info] [ASSOC_D] ekf r=0.285 l=0.076 h=-0.005 yaw=160.8deg omega=+4.804  <<< L/H NONZERO
+[2026-10-18 18:17:24.887] [info] [ASSOC_M] det0 range=5.48m yaw=-94.8deg | f0:cost=8.66 ang=+104 px=90 pred_r=5.14 | f1:cost=0.38 ang=+14 px=23 pred_r=4.70 | f2:cost=35.88 ang=-76 px=288 pred_r=4.70 | f3:cost=57.71 ang=-166 px=332 pred_r=5.15 |
+[2026-10-18 18:17:24.887] [info] [ASSOC_M] det1 range=4.83m yaw=-28.8deg | f0:cost=23.86 ang=+170 px=177 pred_r=5.14 | f1:cost=21.05 ang=+80 px=245 pred_r=4.70 | f2:cost=0.14 ang=-10 px=22 pred_r=4.70 | f3:cost=6.22 ang=-100 px=66 pred_r=5.15 |
+[2026-10-18 18:17:24.887] [warning] [MODEL] phase reset mode=high_speed_phase ekf_omega=+4.753 pll_omega=+nan rate_delta=inf
+[2026-10-18 18:17:24.887] [info] [MODEL] switched to high_speed_phase ekf_omega=+4.753rad_s
+[2026-10-18 18:17:24.887] [info] [XUC][GYRO] center_follow=true tracker=tracking omega=+4.753rad_s radius=0.287m
+[2026-10-18 18:17:24.909] [info] [SYNC][XUC] mode=1 yaw=55.08 deg pitch=-2.34 deg feeder_rpm=0.00 wheel0_rpm=5960 wheel1_rpm=6000 wheel_delta=-40 projectile_speed=19.00 gate=0x00 switch=0 rc=0 sticks=0 imu=0 serial=0 control=0 yaw_armed=0 pitch_active=0
+[2026-10-18 18:17:25.066] [info] [SYNC][XUC] mode=1 yaw=60.72 deg pitch=-2.56 deg feeder_rpm=0.00 wheel0_rpm=6000 wheel1_rpm=6000 wheel_delta=0 projectile_speed=19.00 gate=0x00 switch=0 rc=0 sticks=0 imu=0 serial=0 control=0 yaw_armed=0 pitch_active=0
+[2026-10-18 18:17:25.090] [info] [DRYRUN] measured_gimbal=(4.986,0.186,-0.172) measured_world=(2.602,-4.260,0.050) tracked_world=(2.870,-4.287,0.055) target_gimbal_deg=(2.14,-1.98) target_world_deg=(-58.58,0.58) gimbal_deg=(-60.72,-2.56) armor_y_px=654.0 pixel_error_deg=(-1.98,2.49) ballistic=(range=4.846m holdover=0.244m comp=2.85deg residual=-0.36deg) center_lead=0.00deg center_follow=true q_wxyz=(0.862664,0.011273,-0.019246,0.505285) cmd_deg=(-59.51,-3.09) packed_pitch_deg=-3.09 yaw_pi=(error=nandeg integral=0.00deg output=0.00deg) control=true shoot=false
+[2026-10-18 18:17:25.206] [info] [SYNC][XUC] mode=1 yaw=56.42 deg pitch=-2.71 deg feeder_rpm=0.00 wheel0_rpm=6000 wheel1_rpm=6000 wheel_delta=0 projectile_speed=19.00 gate=0x00 switch=0 rc=0 sticks=0 imu=0 serial=0 control=0 yaw_armed=0 pitch_active=0
+[2026-10-18 18:17:25.348] [info] [SYNC][XUC] mode=1 yaw=62.91 deg pitch=-2.74 deg feeder_rpm=0.00 wheel0_rpm=6000 wheel1_rpm=6000 wheel_delta=0 projectile_speed=19.00 gate=0x00 switch=0 rc=0 sticks=0 imu=0 serial=0 control=0 yaw_armed=0 pitch_active=0
+[2026-10-18 18:17:25.366] [info] [Target] geometry seeded: l=0.040 h=0.000
+[2026-10-18 18:17:25.366] [info] [RANGE] raw=3.971m model=3.971m filtered=4.323m model_used=1 raw_limited=0
+[2026-10-18 18:17:25.370] [info] [PERF] 总耗时=21.8ms (检测=17.5ms, 跟踪=0.4ms), FPS=45.9
+[2026-10-18 18:17:25.370] [info] 📊 [CAMERA FPS] 瞬时帧率=45.2fps, 平均帧率=33.8fps, 总帧数=250, 运行时间=7.4s
+[2026-10-18 18:17:25.399] [info] [YAWESKF] trusted=0 angle=-0.867 omega=+1.368 alpha=+0.045 raw_ekf_omega=+0.997 nis=0.23 accepted=1 rejected=0 whole_iekf_nis=0.19 armor_cv_trusted=0 armor_v=(+0.12,-0.41,+0.00) armor_cv_nis=0.39
+[2026-10-18 18:17:25.489] [info] [XUC][YAW] tracker convergence confirmed; actuator reacquired
+[2026-10-18 18:17:25.489] [info] [XUC][YAW] final slew limiter active: max_rate=30.0 deg/s
+[2026-10-18 18:17:25.493] [info] [SYNC][XUC] mode=1 yaw=60.69 deg pitch=-2.91 deg feeder_rpm=0.00 wheel0_rpm=6000 wheel1_rpm=6040 wheel_delta=-40 projectile_speed=19.00 gate=0x00 switch=0 rc=0 sticks=0 imu=0 serial=0 control=0 yaw_armed=0 pitch_active=0
+[2026-10-18 18:17:25.510] [warning] [MODEL] phase reset mode=armor ekf_omega=+0.812 pll_omega=+nan rate_delta=inf
+[2026-10-18 18:17:25.635] [info] [XUC][FIRE] cadence fallback available; fresh qualification required
+[2026-10-18 18:17:25.638] [info] [SYNC][XUC] mode=1 yaw=61.04 deg pitch=-2.70 deg feeder_rpm=0.00 wheel0_rpm=6000 wheel1_rpm=6000 wheel_delta=0 projectile_speed=19.00 gate=0x00 switch=0 rc=0 sticks=0 imu=0 serial=0 control=0 yaw_armed=0 pitch_active=0
+[2026-10-18 18:17:25.657] [info] [ASSOC] primary_face=0 matches=1 cost=0.081 detections=2 confidence=0.70
+[2026-10-18 18:17:25.657] [info] [ASSOC_D] det=1 face0 cost=0.081 align=8.9deg conf=0.70
+[2026-10-18 18:17:25.657] [info] [ASSOC_D] gate: total_det=2 cand=1 drop_name=1 drop_type=0 reject_cost=3 best_rejected=(det1,face1,cost=9.54) limit=0.80
+[2026-10-18 18:17:25.657] [info] [ASSOC_D] near-miss det1 face1 cost=9.54 = centre 2.63^2->6.93 + angle 3.65^2*0.20->2.67 + range 0.32^2*0.20->0.02 - conf 0.07 | pixels=153.5 scale=58.3 angle_deg=73.1
+[2026-10-18 18:17:25.657] [info] [ASSOC_D] ekf r=0.260 l=0.040 h=0.000 yaw=-48.0deg omega=+0.205
+[2026-10-18 18:17:25.657] [info] [ASSOC_M] det1 range=4.19m yaw=-31.0deg | f0:cost=0.08 ang=+17 px=5 pred_r=4.23 | f1:cost=9.54 ang=-73 px=153 pred_r=4.55 | f2:cost=13.95 ang=-163 px=48 pred_r=4.75 | f3:cost=18.09 ang=+107 px=206 pred_r=4.45 |
+[2026-10-18 18:17:25.657] [info] [DRYRUN] measured_gimbal=(4.182,0.270,-0.144) measured_world=(2.262,-3.530,0.053) tracked_world=(2.274,-3.556,0.057) target_gimbal_deg=(3.69,-1.97) target_world_deg=(-57.35,0.73) gimbal_deg=(-61.04,-2.70) armor_y_px=656.3 pixel_error_deg=(-3.51,2.54) ballistic=(range=4.162m holdover=0.176m comp=2.39deg residual=0.16deg) center_lead=0.00deg center_follow=true q_wxyz=(0.861230,0.011967,-0.020302,0.507669) cmd_deg=(-61.22,-2.29) packed_pitch_deg=-2.29 yaw_pi=(error=nandeg integral=0.00deg output=0.00deg) control=true shoot=false
+[2026-10-18 18:17:25.793] [info] [SYNC][XUC] mode=1 yaw=62.09 deg pitch=-2.48 deg feeder_rpm=0.00 wheel0_rpm=6000 wheel1_rpm=5960 wheel_delta=40 projectile_speed=19.00 gate=0x00 switch=0 rc=0 sticks=0 imu=0 serial=0 control=0 yaw_armed=0 pitch_active=0
+[2026-10-18 18:17:25.956] [info] [SYNC][XUC] mode=1 yaw=62.07 deg pitch=-2.50 deg feeder_rpm=0.00 wheel0_rpm=6000 wheel1_rpm=5960 wheel_delta=40 projectile_speed=19.00 gate=0x00 switch=0 rc=0 sticks=0 imu=0 serial=0 control=0 yaw_armed=0 pitch_active=0
+[2026-10-18 18:17:25.989] [info] [ASSOC] primary_face=0 matches=1 cost=0.194 detections=2 confidence=0.58
+[2026-10-18 18:17:25.989] [info] [ASSOC_D] det=0 face0 cost=0.194 align=60.3deg conf=0.58
+[2026-10-18 18:17:25.989] [info] [ASSOC_D] gate: total_det=2 cand=1 drop_name=0 drop_type=0 reject_cost=7 best_rejected=(det1,face3,cost=1.02) limit=0.80
+[2026-10-18 18:17:25.989] [info] [ASSOC_D] near-miss det1 face3 cost=1.02 = centre 1.04^2->1.08 + angle 0.41^2*0.20->0.03 + range 0.10^2*0.20->0.00 - conf 0.09 | pixels=58.3 scale=56.2 angle_deg=8.2
+[2026-10-18 18:17:25.990] [info] [ASSOC_D] ekf r=0.260 l=0.040 h=0.000 yaw=3.7deg omega=+3.279
+[2026-10-18 18:17:25.990] [info] [ASSOC_M] det0 range=4.61m yaw=-4.1deg | f0:cost=0.19 ang=-8 px=21 pred_r=4.56 | f1:cost=5.26 ang=-98 px=33 pred_r=4.95 | f2:cost=43.17 ang=+172 px=242 pred_r=4.82 | f3:cost=23.49 ang=+82 px=204 pred_r=4.43 |
+[2026-10-18 18:17:25.990] [info] [ASSOC_M] det1 range=4.33m yaw=-78.1deg | f0:cost=28.69 ang=-82 px=283 pred_r=4.56 | f1:cost=31.36 ang=-172 px=229 pred_r=4.95 | f2:cost=4.91 ang=+98 px=21 pred_r=4.82 | f3:cost=1.02 ang=+8 px=58 pred_r=4.43 |
+[2026-10-18 18:17:26.110] [info] [SYNC][XUC] mode=1 yaw=61.06 deg pitch=-2.48 deg feeder_rpm=0.00 wheel0_rpm=6000 wheel1_rpm=6000 wheel_delta=0 projectile_speed=19.00 gate=0x00 switch=0 rc=0 sticks=0 imu=0 serial=0 control=0 yaw_armed=0 pitch_active=0
+[2026-10-18 18:17:26.243] [info] [SYNC][XUC] mode=1 yaw=60.80 deg pitch=-2.49 deg feeder_rpm=0.00 wheel0_rpm=6000 wheel1_rpm=6000 wheel_delta=0 projectile_speed=19.00 gate=0x00 switch=0 rc=0 sticks=0 imu=0 serial=0 control=0 yaw_armed=0 pitch_active=0
+[2026-10-18 18:17:26.268] [info] [DRYRUN] measured_gimbal=(4.003,0.380,-0.129) measured_world=(2.286,-3.310,0.045) tracked_world=(2.759,-4.098,0.044) target_gimbal_deg=(5.43,-1.84) target_world_deg=(-55.38,0.64) gimbal_deg=(-60.80,-2.49) armor_y_px=651.0 pixel_error_deg=(-5.30,2.43) ballistic=(range=4.077m holdover=0.169m comp=2.33deg residual=0.10deg) center_lead=0.00deg center_follow=true q_wxyz=(0.862295,0.010983,-0.018718,0.505941) cmd_deg=(-61.22,-2.42) packed_pitch_deg=-2.42 yaw_pi=(error=nandeg integral=0.00deg output=0.00deg) control=true shoot=false
+[2026-10-18 18:17:26.378] [info] [SYNC][XUC] mode=1 yaw=60.80 deg pitch=-2.51 deg feeder_rpm=0.00 wheel0_rpm=6000 wheel1_rpm=6000 wheel_delta=0 projectile_speed=19.00 gate=0x00 switch=0 rc=0 sticks=0 imu=0 serial=0 control=0 yaw_armed=0 pitch_active=0
+[2026-10-18 18:17:26.539] [info] [SYNC][XUC] mode=1 yaw=60.80 deg pitch=-2.51 deg feeder_rpm=0.00 wheel0_rpm=6000 wheel1_rpm=6000 wheel_delta=0 projectile_speed=19.00 gate=0x00 switch=0 rc=0 sticks=0 imu=0 serial=0 control=0 yaw_armed=0 pitch_active=0
+[2026-10-18 18:17:26.591] [info] [Target] geometry seeded: l=0.040 h=0.000
+[2026-10-18 18:17:26.694] [info] [SYNC][XUC] mode=1 yaw=60.79 deg pitch=-2.53 deg feeder_rpm=0.00 wheel0_rpm=5960 wheel1_rpm=6000 wheel_delta=-40 projectile_speed=19.00 gate=0x00 switch=0 rc=0 sticks=0 imu=0 serial=0 control=0 yaw_armed=0 pitch_active=0
+[2026-10-18 18:17:26.722] [info] [XUC][YAW] tracker convergence confirmed; actuator reacquired
+[2026-10-18 18:17:26.722] [info] [XUC][YAW] final slew limiter active: max_rate=30.0 deg/s
+[2026-10-18 18:17:26.865] [info] [SYNC][XUC] mode=1 yaw=60.76 deg pitch=-2.54 deg feeder_rpm=0.00 wheel0_rpm=6000 wheel1_rpm=6320 wheel_delta=-320 projectile_speed=19.00 gate=0x00 switch=0 rc=0 sticks=0 imu=0 serial=0 control=0 yaw_armed=0 pitch_active=0
+[2026-10-18 18:17:26.899] [info] [ASSOC] primary_face=3 matches=1 cost=-0.073 detections=2 confidence=0.86
+[2026-10-18 18:17:26.900] [info] [ASSOC_D] det=0 face0 cost=0.730 align=66.0deg conf=0.05
+[2026-10-18 18:17:26.900] [info] [ASSOC_D] det=1 face3 cost=-0.073 align=24.0deg conf=0.86
+[2026-10-18 18:17:26.900] [info] [ASSOC_D] gate: total_det=2 cand=2 drop_name=0 drop_type=0 reject_cost=6 best_rejected=(det1,face2,cost=4.74) limit=0.80
+[2026-10-18 18:17:26.900] [info] [ASSOC_D] near-miss det1 face2 cost=4.74 = centre 0.97^2->0.93 + angle 4.39^2*0.20->3.85 + range 0.46^2*0.20->0.04 - conf 0.09 | pixels=53.6 scale=55.5 angle_deg=87.7
+[2026-10-18 18:17:26.900] [info] [ASSOC_D]  selected: det0->face0 (0.730) det1->face3 (-0.073)
+[2026-10-18 18:17:26.900] [info] [ASSOC_D] ekf r=0.268 l=0.057 h=-0.003 yaw=10.5deg omega=+2.662  <<< L/H NONZERO
+[2026-10-18 18:17:26.900] [info] [ASSOC_M] det0 range=4.52m yaw=+3.2deg | f0:cost=0.73 ang=-7 px=41 pred_r=4.62 | f1:cost=10.31 ang=-97 px=115 pred_r=5.02 | f2:cost=59.29 ang=+173 px=324 pred_r=4.84 | f3:cost=33.19 ang=+83 px=265 pred_r=4.43 |
+[2026-10-18 18:17:26.900] [info] [ASSOC_M] det1 range=4.31m yaw=-81.8deg | f0:cost=21.34 ang=-92 px=230 pred_r=4.62 | f1:cost=23.68 ang=+178 px=156 pred_r=5.02 | f2:cost=4.74 ang=+88 px=54 pred_r=4.84 | f3:cost=-0.07 ang=-2 px=5 pred_r=4.43 |
+[2026-10-18 18:17:26.900] [info] [RANGE] raw=4.524m model=4.375m filtered=4.431m model_used=1 raw_limited=0
+[2026-10-18 18:17:26.900] [info] [DRYRUN] measured_gimbal=(4.521,0.110,-0.140) measured_world=(2.305,-3.892,0.060) tracked_world=(2.381,-3.892,0.049) target_gimbal_deg=(1.39,-1.78) target_world_deg=(-59.37,0.76) gimbal_deg=(-60.76,-2.54) armor_y_px=646.0 pixel_error_deg=(-1.15,2.32) ballistic=(range=4.431m holdover=0.202m comp=2.57deg residual=-0.25deg) center_lead=0.00deg center_follow=true q_wxyz=(0.862477,0.011209,-0.019120,0.505611) cmd_deg=(-61.22,-2.87) packed_pitch_deg=-2.87 yaw_pi=(error=nandeg integral=0.00deg output=0.00deg) control=true shoot=false
+[2026-10-18 18:17:26.904] [info] [PERF] 总耗时=38.8ms (检测=33.2ms, 跟踪=1.4ms), FPS=25.8
+[2026-10-18 18:17:26.904] [info] 📊 [CAMERA FPS] 瞬时帧率=25.8fps, 平均帧率=33.6fps, 总帧数=300, 运行时间=8.9s
+[2026-10-18 18:17:26.957] [info] [YAWESKF] trusted=0 angle=+0.304 omega=+3.046 alpha=+2.958 raw_ekf_omega=+2.638 nis=0.03 accepted=11 rejected=0 whole_iekf_nis=0.35 armor_cv_trusted=1 armor_v=(-0.72,+0.32,+0.01) armor_cv_nis=0.55
+[2026-10-18 18:17:27.015] [info] [SYNC][XUC] mode=1 yaw=60.69 deg pitch=-2.70 deg feeder_rpm=0.00 wheel0_rpm=6120 wheel1_rpm=6240 wheel_delta=-120 projectile_speed=19.00 gate=0x00 switch=0 rc=0 sticks=0 imu=0 serial=0 control=0 yaw_armed=0 pitch_active=0
+[2026-10-18 18:17:27.163] [info] [SYNC][XUC] mode=1 yaw=60.70 deg pitch=-2.69 deg feeder_rpm=0.00 wheel0_rpm=6000 wheel1_rpm=6080 wheel_delta=-80 projectile_speed=19.00 gate=0x00 switch=0 rc=0 sticks=0 imu=0 serial=0 control=0 yaw_armed=0 pitch_active=0
+[2026-10-18 18:17:27.183] [info] [ASSOC] primary_face=3 matches=1 cost=0.039 detections=1 confidence=0.80
+[2026-10-18 18:17:27.183] [info] [ASSOC_D] det=0 face3 cost=0.039 align=4.9deg conf=0.80
+[2026-10-18 18:17:27.183] [info] [ASSOC_D] gate: total_det=1 cand=1 drop_name=0 drop_type=0 reject_cost=3 best_rejected=(det0,face0,cost=9.19) limit=0.80
+[2026-10-18 18:17:27.183] [info] [ASSOC_D] near-miss det0 face0 cost=9.19 = centre 2.09^2->4.38 + angle 4.94^2*0.20->4.87 + range 0.32^2*0.20->0.02 - conf 0.08 | pixels=127.9 scale=61.1 angle_deg=98.7
+[2026-10-18 18:17:27.183] [info] [ASSOC_D] ekf r=0.269 l=0.052 h=-0.004 yaw=40.0deg omega=+1.266  <<< L/H NONZERO
+[2026-10-18 18:17:27.183] [info] [ASSOC_M] det0 range=4.10m yaw=-58.7deg | f0:cost=9.19 ang=-99 px=128 pred_r=4.44 | f1:cost=15.44 ang=+171 px=54 pred_r=4.73 | f2:cost=14.50 ang=+81 px=205 pred_r=4.39 | f3:cost=0.04 ang=-9 px=17 pred_r=4.09 |
+[2026-10-18 18:17:27.306] [info] [SYNC][XUC] mode=1 yaw=60.69 deg pitch=-2.57 deg feeder_rpm=0.00 wheel0_rpm=6000 wheel1_rpm=6040 wheel_delta=-40 projectile_speed=19.00 gate=0x00 switch=0 rc=0 sticks=0 imu=0 serial=0 control=0 yaw_armed=0 pitch_active=0
+[2026-10-18 18:17:27.455] [info] [SYNC][XUC] mode=1 yaw=60.95 deg pitch=-2.52 deg feeder_rpm=0.00 wheel0_rpm=6000 wheel1_rpm=5960 wheel_delta=40 projectile_speed=19.00 gate=0x00 switch=0 rc=0 sticks=0 imu=0 serial=0 control=0 yaw_armed=0 pitch_active=0
+[2026-10-18 18:17:27.478] [info] [ASSOC] primary_face=3 matches=1 cost=0.388 detections=3 confidence=0.46
+[2026-10-18 18:17:27.478] [info] [ASSOC_D] det=1 face3 cost=0.388 align=4.4deg conf=0.46
+[2026-10-18 18:17:27.478] [info] [ASSOC_D] gate: total_det=3 cand=1 drop_name=1 drop_type=0 reject_cost=7 best_rejected=(det2,face2,cost=1.29) limit=0.80
+[2026-10-18 18:17:27.478] [info] [ASSOC_D] near-miss det2 face2 cost=1.29 = centre 0.96^2->0.92 + angle 1.35^2*0.20->0.37 + range 0.31^2*0.20->0.02 - conf 0.01 | pixels=46.2 scale=48.2 angle_deg=27.0
+[2026-10-18 18:17:27.478] [info] [ASSOC_D] ekf r=0.270 l=0.053 h=-0.004 yaw=38.0deg omega=-0.301  <<< L/H NONZERO
+[2026-10-18 18:17:27.478] [info] [ASSOC_M] det1 range=4.25m yaw=-34.9deg | f0:cost=6.21 ang=-73 px=112 pred_r=4.52 | f1:cost=14.49 ang=-163 px=65 pred_r=4.82 | f2:cost=18.71 ang=+107 px=214 pred_r=4.48 | f3:cost=0.39 ang=+17 px=32 pred_r=4.17 |
+[2026-10-18 18:17:27.478] [info] [ASSOC_M] det2 range=4.85m yaw=-114.9deg | f0:cost=71.56 ang=-153 px=373 pred_r=4.52 | f1:cost=23.25 ang=+117 px=195 pred_r=4.82 | f2:cost=1.29 ang=+27 px=46 pred_r=4.48 | f3:cost=24.57 ang=-63 px=229 pred_r=4.17 |
+[2026-10-18 18:17:27.479] [info] [DRYRUN] measured_gimbal=(4.238,0.260,-0.145) measured_world=(2.287,-3.580,0.042) tracked_world=(2.292,-3.928,0.043) target_gimbal_deg=(3.52,-1.96) target_world_deg=(-57.43,0.56) gimbal_deg=(-60.95,-2.52) armor_y_px=655.5 pixel_error_deg=(-3.33,2.53) ballistic=(range=4.140m holdover=0.174m comp=2.37deg residual=0.15deg) center_lead=0.00deg center_follow=true q_wxyz=(0.861657,0.011164,-0.018972,0.507013) cmd_deg=(-61.22,-2.27) packed_pitch_deg=-2.27 yaw_pi=(error=nandeg integral=0.00deg output=0.00deg) control=true shoot=false
+[2026-10-18 18:17:27.621] [info] [SYNC][XUC] mode=1 yaw=60.93 deg pitch=-2.47 deg feeder_rpm=0.00 wheel0_rpm=6000 wheel1_rpm=6000 wheel_delta=0 projectile_speed=19.00 gate=0x00 switch=0 rc=0 sticks=0 imu=0 serial=0 control=0 yaw_armed=0 pitch_active=0
+[2026-10-18 18:17:27.777] [info] [SYNC][XUC] mode=1 yaw=60.94 deg pitch=-2.48 deg feeder_rpm=0.00 wheel0_rpm=6000 wheel1_rpm=6040 wheel_delta=-40 projectile_speed=19.00 gate=0x00 switch=0 rc=0 sticks=0 imu=0 serial=0 control=0 yaw_armed=0 pitch_active=0
+[2026-10-18 18:17:27.799] [info] [ASSOC] primary_face=3 matches=1 cost=0.034 detections=2 confidence=0.70
+[2026-10-18 18:17:27.799] [info] [ASSOC_D] det=0 face3 cost=0.034 align=41.9deg conf=0.70
+[2026-10-18 18:17:27.799] [info] [ASSOC_D] det=1 face2 cost=0.279 align=48.1deg conf=0.88
+[2026-10-18 18:17:27.799] [info] [ASSOC_D] gate: total_det=2 cand=2 drop_name=0 drop_type=0 reject_cost=6 best_rejected=(det0,face0,cost=3.28) limit=0.80
+[2026-10-18 18:17:27.799] [info] [ASSOC_D] near-miss det0 face0 cost=3.28 = centre 0.53^2->0.28 + angle 3.89^2*0.20->3.02 + range 0.47^2*0.20->0.05 - conf 0.07 | pixels=29.2 scale=55.1 angle_deg=77.7
+[2026-10-18 18:17:27.799] [info] [ASSOC_D]  selected: det1->face2 (0.279) det0->face3 (0.034)
+[2026-10-18 18:17:27.799] [info] [ASSOC_D] ekf r=0.270 l=0.054 h=-0.004 yaw=75.8deg omega=+1.410  <<< L/H NONZERO
+[2026-10-18 18:17:27.799] [info] [ASSOC_M] det0 range=4.48m yaw=-1.9deg | f0:cost=3.28 ang=-78 px=29 pred_r=5.04 | f1:cost=35.18 ang=-168 px=253 pred_r=5.11 | f2:cost=26.26 ang=+102 px=253 pred_r=4.68 | f3:cost=0.03 ang=+12 px=9 pred_r=4.62 |
+[2026-10-18 18:17:27.799] [info] [ASSOC_M] det1 range=4.31m yaw=-78.9deg | f0:cost=28.74 ang=-155 px=230 pred_r=5.04 | f1:cost=6.66 ang=+115 px=7 pred_r=5.11 | f2:cost=0.28 ang=+25 px=9 pred_r=4.68 | f3:cost=21.91 ang=-65 px=251 pred_r=4.62 |
+[2026-10-18 18:17:27.858] [info] [CORNER] accepted=339/400 (84.8%) last_score=0.254
+[2026-10-18 18:17:27.941] [info] [SYNC][XUC] mode=1 yaw=60.94 deg pitch=-2.47 deg feeder_rpm=0.00 wheel0_rpm=6000 wheel1_rpm=6000 wheel_delta=0 projectile_speed=19.00 gate=0x00 switch=0 rc=0 sticks=0 imu=0 serial=0 control=0 yaw_armed=0 pitch_active=0
+[2026-10-18 18:17:28.086] [info] [SYNC][XUC] mode=1 yaw=60.97 deg pitch=-2.49 deg feeder_rpm=0.00 wheel0_rpm=5960 wheel1_rpm=6000 wheel_delta=-40 projectile_speed=19.00 gate=0x00 switch=0 rc=0 sticks=0 imu=0 serial=0 control=0 yaw_armed=0 pitch_active=0
+[2026-10-18 18:17:28.106] [info] [ASSOC] primary_face=2 matches=1 cost=0.063 detections=1 confidence=0.62
+[2026-10-18 18:17:28.106] [info] [ASSOC_D] det=0 face2 cost=0.063 align=13.6deg conf=0.62
+[2026-10-18 18:17:28.106] [info] [ASSOC_D] gate: total_det=1 cand=1 drop_name=0 drop_type=0 reject_cost=3 best_rejected=(det0,face3,cost=12.62) limit=0.80
+[2026-10-18 18:17:28.106] [info] [ASSOC_D] near-miss det0 face3 cost=12.62 = centre 2.69^2->7.21 + angle 5.22^2*0.20->5.46 + range 0.25^2*0.20->0.01 - conf 0.06 | pixels=158.8 scale=59.1 angle_deg=104.5
+[2026-10-18 18:17:28.106] [info] [ASSOC_D] ekf r=0.275 l=0.045 h=-0.000 yaw=138.5deg omega=+2.558
+[2026-10-18 18:17:28.106] [info] [ASSOC_M] det0 range=4.06m yaw=-56.0deg | f0:cost=15.44 ang=+166 px=79 pred_r=4.50 | f1:cost=19.83 ang=+76 px=244 pred_r=4.17 | f2:cost=0.06 ang=-14 px=8 pred_r=3.96 | f3:cost=12.62 ang=-104 px=159 pred_r=4.32 |
+[2026-10-18 18:17:28.106] [info] [DRYRUN] measured_gimbal=(4.040,0.363,-0.135) measured_world=(2.278,-3.358,0.041) tracked_world=(2.618,-3.696,0.040) target_gimbal_deg=(5.13,-1.90) target_world_deg=(-55.85,0.58) gimbal_deg=(-60.97,-2.49) armor_y_px=654.0 pixel_error_deg=(-4.99,2.49) ballistic=(range=4.074m holdover=0.168m comp=2.33deg residual=0.16deg) center_lead=0.00deg center_follow=true q_wxyz=(0.861539,0.011042,-0.018755,0.507225) cmd_deg=(-61.22,-2.34) packed_pitch_deg=-2.34 yaw_pi=(error=nandeg integral=0.00deg output=0.00deg) control=true shoot=false
+[2026-10-18 18:17:28.247] [info] [SYNC][XUC] mode=1 yaw=60.98 deg pitch=-2.51 deg feeder_rpm=0.00 wheel0_rpm=6040 wheel1_rpm=6040 wheel_delta=0 projectile_speed=19.00 gate=0x00 switch=0 rc=0 sticks=0 imu=0 serial=0 control=0 yaw_armed=0 pitch_active=0
+[2026-10-18 18:17:28.268] [info] [XUC][GYRO] center_follow=false tracker=tracking omega=+0.292rad_s radius=0.277m
+[2026-10-18 18:17:28.399] [info] [XUC][FIRE] stable-window candidate started
+[2026-10-18 18:17:28.404] [info] [SYNC][XUC] mode=1 yaw=60.98 deg pitch=-2.50 deg feeder_rpm=0.00 wheel0_rpm=5960 wheel1_rpm=6000 wheel_delta=-40 projectile_speed=19.00 gate=0x00 switch=0 rc=0 sticks=0 imu=0 serial=0 control=0 yaw_armed=0 pitch_active=0
+[2026-10-18 18:17:28.425] [info] [ASSOC] primary_face=2 matches=1 cost=0.023 detections=2 confidence=0.81
+[2026-10-18 18:17:28.425] [info] [ASSOC_D] det=0 face2 cost=0.023 align=15.1deg conf=0.81
+[2026-10-18 18:17:28.425] [info] [ASSOC_D] det=1 face1 cost=0.531 align=74.9deg conf=0.28
+[2026-10-18 18:17:28.425] [info] [ASSOC_D] gate: total_det=2 cand=2 drop_name=0 drop_type=0 reject_cost=6 best_rejected=(det0,face3,cost=7.93) limit=0.80
+[2026-10-18 18:17:28.425] [info] [ASSOC_D] near-miss det0 face3 cost=7.93 = centre 2.22^2->4.95 + angle 3.90^2*0.20->3.05 + range 0.26^2*0.20->0.01 - conf 0.08 | pixels=121.1 scale=54.4 angle_deg=78.1
+[2026-10-18 18:17:28.425] [info] [ASSOC_D]  selected: det1->face1 (0.531) det0->face2 (0.023)
+[2026-10-18 18:17:28.425] [info] [ASSOC_D] ekf r=0.277 l=0.039 h=-0.000 yaw=138.1deg omega=+0.171
+[2026-10-18 18:17:28.425] [info] [ASSOC_M] det0 range=4.36m yaw=-30.0deg | f0:cost=17.38 ang=-168 px=99 pred_r=4.83 | f1:cost=24.94 ang=+102 px=242 pred_r=4.49 | f2:cost=0.02 ang=+12 px=10 pred_r=4.29 | f3:cost=7.93 ang=-78 px=121 pred_r=4.65 |
+[2026-10-18 18:17:28.425] [info] [ASSOC_M] det1 range=4.57m yaw=-106.0deg | f0:cost=19.98 ang=+116 px=164 pred_r=4.83 | f1:cost=0.53 ang=+26 px=21 pred_r=4.49 | f2:cost=33.65 ang=-64 px=254 pred_r=4.29 | f3:cost=84.47 ang=-154 px=384 pred_r=4.65 |
+[2026-10-18 18:17:28.426] [info] [RANGE] raw=4.362m model=4.316m filtered=4.227m model_used=1 raw_limited=0
+[2026-10-18 18:17:28.429] [info] [PERF] 总耗时=25.3ms (检测=21.0ms, 跟踪=0.9ms), FPS=39.6
+[2026-10-18 18:17:28.429] [info] 📊 [CAMERA FPS] 瞬时帧率=39.0fps, 平均帧率=33.5fps, 总帧数=350, 运行时间=10.4s
+[2026-10-18 18:17:28.498] [info] [YAWESKF] trusted=1 angle=+2.552 omega=+0.538 alpha=-1.908 raw_ekf_omega=+1.198 nis=0.30 accepted=63 rejected=0 whole_iekf_nis=0.13 armor_cv_trusted=1 armor_v=(+0.15,-1.21,+0.02) armor_cv_nis=0.09
+[2026-10-18 18:17:28.498] [info] [XUC][FIRE] qualified after 100 ms/4 frames, current_pixel_error_deg=(-2.17,-0.10) predicted_impact_yaw_error_deg=inf gyro_predict=false face_error=26.86deg committed_face=-1 face_align=infdeg phase_unc=nandeg gimbal_err=infdeg omega=+0.538rad_s armed=true
+[2026-10-18 18:17:28.498] [info] [SHOT] id=2 issue mode=1 gyro=0 event=0 cycle=-1 processing_age_ms=38.7 due_error_ms=+nan period_ms=nan window_deg=nan worst_deg=nan combined_deg=nan face=-1 face_align_deg=inf phase_unc_deg=nan gimbal_err_deg=inf
+[2026-10-18 18:17:28.524] [info] [XUC][FIRE] request inhibited until cadence fallback interval elapses
+[2026-10-18 18:17:28.524] [info] [XUC][FIRE] stable window reset
+[2026-10-18 18:17:28.527] [info] [SHOTADAPT] id=2 feeder_ms=23.86 samples=2 ready=0 delay_ms=85.00 pi95_ms=[65.00,105.00]
+[2026-10-18 18:17:28.527] [info] [SHOT] id=2 feeder_start command_to_feeder_ms=23.86 rpm=834
+[2026-10-18 18:17:28.565] [info] [SYNC][XUC] mode=1 yaw=60.98 deg pitch=-2.47 deg feeder_rpm=1365.00 wheel0_rpm=6000 wheel1_rpm=6000 wheel_delta=0 projectile_speed=19.00 gate=0x00 switch=0 rc=0 sticks=0 imu=0 serial=0 control=0 yaw_armed=0 pitch_active=0
+[2026-10-18 18:17:28.623] [info] [SHOT] feeder_start_unpaired rpm=-348
+[2026-10-18 18:17:28.659] [info] [SHOT] id=2 feeder_stop feeder_motion_ms=110.3
+[2026-10-18 18:17:28.659] [info] [XUC][FIRE] feeder stopped; post-feed hold=550 ms
+[2026-10-18 18:17:28.721] [info] [SYNC][XUC] mode=1 yaw=60.01 deg pitch=-2.53 deg feeder_rpm=-15.00 wheel0_rpm=6080 wheel1_rpm=6040 wheel_delta=40 projectile_speed=19.00 gate=0x00 switch=0 rc=0 sticks=0 imu=0 serial=0 control=0 yaw_armed=0 pitch_active=0
+[2026-10-18 18:17:28.746] [info] [ASSOC] primary_face=1 matches=1 cost=0.169 detections=1 confidence=0.91
+[2026-10-18 18:17:28.746] [info] [ASSOC_D] det=0 face1 cost=0.169 align=30.3deg conf=0.91
+[2026-10-18 18:17:28.746] [info] [ASSOC_D] gate: total_det=1 cand=1 drop_name=0 drop_type=0 reject_cost=3 best_rejected=(det0,face0,cost=6.55) limit=0.80
+[2026-10-18 18:17:28.746] [info] [ASSOC_D] near-miss det0 face0 cost=6.55 = centre 0.78^2->0.61 + angle 5.48^2*0.20->6.00 + range 0.44^2*0.20->0.04 - conf 0.09 | pixels=52.2 scale=67.1 angle_deg=109.5
+[2026-10-18 18:17:28.746] [info] [ASSOC_D] ekf r=0.278 l=0.050 h=-0.002 yaw=-176.6deg omega=+1.994  <<< L/H NONZERO
+[2026-10-18 18:17:28.746] [info] [ASSOC_M] det0 range=4.39m yaw=-67.0deg | f0:cost=6.55 ang=+110 px=52 pred_r=4.90 | f1:cost=0.17 ang=+20 px=17 pred_r=4.47 | f2:cost=13.52 ang=-70 px=224 pred_r=4.62 | f3:cost=19.27 ang=-160 px=170 pred_r=5.04 |
+[2026-10-18 18:17:28.747] [info] [DRYRUN] measured_gimbal=(4.368,0.420,-0.152) measured_world=(2.548,-3.575,0.041) tracked_world=(2.919,-3.860,0.044) target_gimbal_deg=(5.49,-1.99) target_world_deg=(-54.52,0.53) gimbal_deg=(-60.01,-2.53) armor_y_px=656.6 pixel_error_deg=(-5.41,2.55) ballistic=(range=4.514m holdover=0.210m comp=2.62deg residual=-0.07deg) center_lead=0.00deg center_follow=false q_wxyz=(0.865790,0.011048,-0.019133,0.499920) cmd_deg=(-57.88,-2.82) packed_pitch_deg=-2.82 yaw_pi=(error=nandeg integral=0.00deg output=0.00deg) control=true shoot=false
+[2026-10-18 18:17:28.856] [info] [SYNC][XUC] mode=1 yaw=55.21 deg pitch=-2.56 deg feeder_rpm=-15.00 wheel0_rpm=6040 wheel1_rpm=6000 wheel_delta=40 projectile_speed=19.00 gate=0x00 switch=0 rc=0 sticks=0 imu=0 serial=0 control=0 yaw_armed=0 pitch_active=0
+[2026-10-18 18:17:29.007] [info] [SYNC][XUC] mode=1 yaw=55.53 deg pitch=-2.67 deg feeder_rpm=0.00 wheel0_rpm=5840 wheel1_rpm=5920 wheel_delta=-80 projectile_speed=19.00 gate=0x00 switch=0 rc=0 sticks=0 imu=0 serial=0 control=0 yaw_armed=0 pitch_active=0
+[2026-10-18 18:17:29.026] [info] [ASSOC] primary_face=1 matches=1 cost=0.021 detections=1 confidence=0.80
+[2026-10-18 18:17:29.026] [info] [ASSOC_D] det=0 face1 cost=0.021 align=13.9deg conf=0.80
+[2026-10-18 18:17:29.026] [info] [ASSOC_D] gate: total_det=1 cand=1 drop_name=0 drop_type=0 reject_cost=3 best_rejected=(det0,face2,cost=8.35) limit=0.80
+[2026-10-18 18:17:29.026] [info] [ASSOC_D] near-miss det0 face2 cost=8.35 = centre 1.77^2->3.14 + angle 5.13^2*0.20->5.26 + range 0.37^2*0.20->0.03 - conf 0.08 | pixels=110.6 scale=62.4 angle_deg=102.6
+[2026-10-18 18:17:29.026] [info] [ASSOC_D] ekf r=0.278 l=0.048 h=-0.002 yaw=-131.0deg omega=+2.177
+[2026-10-18 18:17:29.026] [info] [ASSOC_M] det0 range=4.00m yaw=-53.5deg | f0:cost=16.62 ang=+77 px=231 pred_r=4.25 | f1:cost=0.02 ang=-13 px=9 pred_r=3.99 | f2:cost=8.35 ang=-103 px=111 pred_r=4.38 | f3:cost=16.92 ang=+167 px=107 pred_r=4.63 |
+[2026-10-18 18:17:29.145] [info] [SYNC][XUC] mode=1 yaw=51.86 deg pitch=-2.60 deg feeder_rpm=-4.00 wheel0_rpm=5920 wheel1_rpm=5960 wheel_delta=-40 projectile_speed=19.00 gate=0x00 switch=0 rc=0 sticks=0 imu=0 serial=0 control=0 yaw_armed=0 pitch_active=0
+[2026-10-18 18:17:29.284] [info] [SYNC][XUC] mode=1 yaw=55.82 deg pitch=-2.52 deg feeder_rpm=0.00 wheel0_rpm=5960 wheel1_rpm=5960 wheel_delta=0 projectile_speed=19.00 gate=0x00 switch=0 rc=0 sticks=0 imu=0 serial=0 control=0 yaw_armed=0 pitch_active=0
+[2026-10-18 18:17:29.334] [info] [ASSOC] primary_face=1 matches=1 cost=0.090 detections=1 confidence=0.10
+[2026-10-18 18:17:29.334] [info] [ASSOC_D] det=0 face1 cost=0.090 align=18.6deg conf=0.10
+[2026-10-18 18:17:29.334] [info] [ASSOC_D] gate: total_det=1 cand=1 drop_name=0 drop_type=0 reject_cost=3 best_rejected=(det0,face2,cost=6.17) limit=0.80
+[2026-10-18 18:17:29.334] [info] [ASSOC_D] near-miss det0 face2 cost=6.17 = centre 1.48^2->2.18 + angle 4.47^2*0.20->3.99 + range 0.11^2*0.20->0.00 - conf 0.01 | pixels=91.9 scale=62.2 angle_deg=89.4
+[2026-10-18 18:17:29.334] [info] [ASSOC_D] ekf r=0.278 l=0.052 h=-0.002 yaw=-127.0deg omega=+0.252  <<< L/H NONZERO
+[2026-10-18 18:17:29.334] [info] [ASSOC_M] det0 range=4.94m yaw=-36.4deg | f0:cost=15.68 ang=+91 px=212 pred_r=4.63 | f1:cost=0.09 ang=+1 px=15 pred_r=4.40 | f2:cost=6.17 ang=-89 px=92 pred_r=4.81 | f3:cost=19.53 ang=-179 px=116 pred_r=5.02 |
+[2026-10-18 18:17:29.456] [info] [SYNC][XUC] mode=1 yaw=55.29 deg pitch=-2.47 deg feeder_rpm=0.00 wheel0_rpm=6000 wheel1_rpm=6000 wheel_delta=0 projectile_speed=19.00 gate=0x00 switch=0 rc=0 sticks=0 imu=0 serial=0 control=0 yaw_armed=0 pitch_active=0
+[2026-10-18 18:17:29.593] [info] [SYNC][XUC] mode=1 yaw=55.10 deg pitch=-2.70 deg feeder_rpm=0.00 wheel0_rpm=5960 wheel1_rpm=6000 wheel_delta=-40 projectile_speed=19.00 gate=0x00 switch=0 rc=0 sticks=0 imu=0 serial=0 control=0 yaw_armed=0 pitch_active=0
+[2026-10-18 18:17:29.679] [info] [ASSOC] primary_face=0 matches=1 cost=-0.077 detections=1 confidence=0.88
+[2026-10-18 18:17:29.679] [info] [ASSOC_D] det=0 face0 cost=-0.077 align=4.9deg conf=0.88
+[2026-10-18 18:17:29.679] [info] [ASSOC_D] gate: total_det=1 cand=1 drop_name=0 drop_type=0 reject_cost=3 best_rejected=(det0,face3,cost=14.39) limit=0.80
+[2026-10-18 18:17:29.679] [info] [ASSOC_D] near-miss det0 face3 cost=14.39 = centre 3.18^2->10.11 + angle 4.65^2*0.20->4.33 + range 0.44^2*0.20->0.04 - conf 0.09 | pixels=188.6 scale=59.3 angle_deg=93.1
+[2026-10-18 18:17:29.679] [info] [ASSOC_D] ekf r=0.279 l=0.071 h=0.004 yaw=-59.5deg omega=+2.776  <<< L/H NONZERO
+[2026-10-18 18:17:29.679] [info] [ASSOC_M] det0 range=4.19m yaw=-56.4deg | f0:cost=-0.08 ang=+3 px=2 pred_r=4.36 | f1:cost=17.57 ang=-87 px=221 pred_r=4.62 | f2:cost=15.85 ang=-177 px=26 pred_r=4.91 | f3:cost=14.39 ang=+93 px=189 pred_r=4.68 |
+[2026-10-18 18:17:29.740] [info] [SYNC][XUC] mode=1 yaw=56.75 deg pitch=-2.93 deg feeder_rpm=0.00 wheel0_rpm=6000 wheel1_rpm=6000 wheel_delta=0 projectile_speed=19.00 gate=0x00 switch=0 rc=0 sticks=0 imu=0 serial=0 control=0 yaw_armed=0 pitch_active=0
+[2026-10-18 18:17:29.897] [info] [SYNC][XUC] mode=1 yaw=50.69 deg pitch=-2.85 deg feeder_rpm=0.00 wheel0_rpm=6000 wheel1_rpm=6000 wheel_delta=0 projectile_speed=19.00 gate=0x00 switch=0 rc=0 sticks=0 imu=0 serial=0 control=0 yaw_armed=0 pitch_active=0
+[2026-10-18 18:17:29.915] [info] [RANGE] raw=4.098m model=4.003m filtered=4.050m model_used=1 raw_limited=0
+[2026-10-18 18:17:29.915] [info] [DRYRUN] measured_gimbal=(4.075,-0.410,-0.142) measured_world=(2.266,-3.414,0.061) tracked_world=(2.221,-3.330,0.059) target_gimbal_deg=(-5.74,-1.98) target_world_deg=(-56.43,0.85) gimbal_deg=(-50.69,-2.85) armor_y_px=658.9 pixel_error_deg=(6.45,2.60) ballistic=(range=4.050m holdover=0.166m comp=2.31deg residual=0.29deg) center_lead=0.00deg center_follow=false q_wxyz=(0.903467,0.010644,-0.022472,0.427936) cmd_deg=(-54.45,-2.44) packed_pitch_deg=-2.44 yaw_pi=(error=nandeg integral=0.00deg output=0.00deg) control=true shoot=false
+[2026-10-18 18:17:29.917] [info] [PERF] 总耗时=20.4ms (检测=17.6ms, 跟踪=0.5ms), FPS=49.0
+[2026-10-18 18:17:29.917] [info] 📊 [CAMERA FPS] 瞬时帧率=48.9fps, 平均帧率=33.5fps, 总帧数=400, 运行时间=11.9s
+[2026-10-18 18:17:29.968] [info] [ASSOC] primary_face=0 matches=1 cost=0.250 detections=2 confidence=0.75
+[2026-10-18 18:17:29.968] [info] [ASSOC_D] det=0 face0 cost=0.250 align=13.7deg conf=0.75
+[2026-10-18 18:17:29.968] [info] [ASSOC_D] gate: total_det=2 cand=1 drop_name=1 drop_type=0 reject_cost=3 best_rejected=(det0,face1,cost=15.17) limit=0.80
+[2026-10-18 18:17:29.968] [info] [ASSOC_D] near-miss det0 face1 cost=15.17 = centre 3.19^2->10.19 + angle 5.02^2*0.20->5.05 + range 0.20^2*0.20->0.01 - conf 0.07 | pixels=199.5 scale=62.5 angle_deg=100.5
+[2026-10-18 18:17:29.968] [info] [ASSOC_D] ekf r=0.280 l=0.069 h=0.004 yaw=-42.1deg omega=+0.915  <<< L/H NONZERO
+[2026-10-18 18:17:29.968] [info] [ASSOC_M] det0 range=4.17m yaw=-52.5deg | f0:cost=0.25 ang=-10 px=32 pred_r=4.03 | f1:cost=15.17 ang=-100 px=200 pred_r=4.39 | f2:cost=15.28 ang=+170 px=61 pred_r=4.57 | f3:cost=17.61 ang=+80 px=238 pred_r=4.23 |
+[2026-10-18 18:17:29.968] [info] [YAWESKF] trusted=1 angle=-0.789 omega=+0.625 alpha=-3.457 raw_ekf_omega=+0.997 nis=0.68 accepted=115 rejected=0 whole_iekf_nis=2.00 armor_cv_trusted=1 armor_v=(-0.50,-0.25,+0.05) armor_cv_nis=1.36
+[2026-10-18 18:17:30.027] [info] [SYNC][XUC] mode=1 yaw=53.49 deg pitch=-2.66 deg feeder_rpm=0.00 wheel0_rpm=6000 wheel1_rpm=6040 wheel_delta=-40 projectile_speed=19.00 gate=0x00 switch=0 rc=0 sticks=0 imu=0 serial=0 control=0 yaw_armed=0 pitch_active=0
+[2026-10-18 18:17:30.058] [info] [XUC][FIRE] cadence fallback available; fresh qualification required
+[2026-10-18 18:17:30.079] [info] [XUC][FIRE] stable-window candidate started
+[2026-10-18 18:17:30.170] [info] [XUC][FIRE] qualified after 82 ms/4 frames, current_pixel_error_deg=(-0.56,0.12) predicted_impact_yaw_error_deg=inf gyro_predict=false face_error=6.78deg committed_face=-1 face_align=infdeg phase_unc=nandeg gimbal_err=infdeg omega=+0.171rad_s armed=true
+[2026-10-18 18:17:30.170] [info] [SHOT] id=3 issue mode=1 gyro=0 event=0 cycle=-1 processing_age_ms=43.2 due_error_ms=+nan period_ms=nan window_deg=nan worst_deg=nan combined_deg=nan face=-1 face_align_deg=inf phase_unc_deg=nan gimbal_err_deg=inf
+[2026-10-18 18:17:30.173] [info] [SYNC][XUC] mode=1 yaw=57.44 deg pitch=-2.60 deg feeder_rpm=0.00 wheel0_rpm=5960 wheel1_rpm=6000 wheel_delta=-40 projectile_speed=19.00 gate=0x00 switch=0 rc=0 sticks=0 imu=0 serial=0 control=0 yaw_armed=0 pitch_active=0
+[2026-10-18 18:17:30.192] [info] [XUC][FIRE] request inhibited until cadence fallback interval elapses
+[2026-10-18 18:17:30.192] [info] [XUC][FIRE] stable window reset
+[2026-10-18 18:17:30.196] [info] [SHOTADAPT] id=3 feeder_ms=17.45 samples=3 ready=0 delay_ms=85.00 pi95_ms=[65.00,105.00]
+[2026-10-18 18:17:30.196] [info] [SHOT] id=3 feeder_start command_to_feeder_ms=17.45 rpm=340
+[2026-10-18 18:17:30.319] [info] [ASSOC] primary_face=0 matches=1 cost=0.120 detections=2 confidence=0.48
+[2026-10-18 18:17:30.319] [info] [ASSOC_D] det=1 face0 cost=0.120 align=20.2deg conf=0.48
+[2026-10-18 18:17:30.319] [info] [ASSOC_D] gate: total_det=2 cand=1 drop_name=0 drop_type=0 reject_cost=7 best_rejected=(det0,face3,cost=1.45) limit=0.80
+[2026-10-18 18:17:30.319] [info] [ASSOC_D] near-miss det0 face3 cost=1.45 = centre 0.86^2->0.74 + angle 1.88^2*0.20->0.70 + range 0.49^2*0.20->0.05 - conf 0.04 | pixels=45.9 scale=53.4 angle_deg=37.5
+[2026-10-18 18:17:30.319] [info] [ASSOC_D] ekf r=0.281 l=0.068 h=0.004 yaw=-37.4deg omega=-0.087  <<< L/H NONZERO
+[2026-10-18 18:17:30.319] [info] [ASSOC_M] det0 range=5.40m yaw=-89.9deg | f0:cost=31.01 ang=-52 px=290 pred_r=4.63 | f1:cost=68.98 ang=-142 px=409 pred_r=5.02 | f2:cost=19.23 ang=+128 px=178 pred_r=5.15 | f3:cost=1.45 ang=+38 px=46 pred_r=4.78 |
+[2026-10-18 18:17:30.319] [info] [ASSOC_M] det1 range=5.05m yaw=-23.9deg | f0:cost=0.12 ang=+14 px=13 pred_r=4.63 | f1:cost=8.57 ang=-76 px=132 pred_r=5.02 | f2:cost=17.08 ang=-166 px=100 pred_r=5.15 | f3:cost=23.05 ang=+104 px=232 pred_r=4.78 |
+[2026-10-18 18:17:30.322] [info] [SHOT] id=3 feeder_stop feeder_motion_ms=130.3
+[2026-10-18 18:17:30.322] [info] [XUC][FIRE] feeder stopped; post-feed hold=550 ms
+[2026-10-18 18:17:30.359] [info] [SYNC][XUC] mode=1 yaw=59.50 deg pitch=-2.41 deg feeder_rpm=29.00 wheel0_rpm=6000 wheel1_rpm=6000 wheel_delta=0 projectile_speed=19.00 gate=0x00 switch=0 rc=0 sticks=0 imu=0 serial=0 control=0 yaw_armed=0 pitch_active=0
+[2026-10-18 18:17:30.501] [info] [SYNC][XUC] mode=1 yaw=55.21 deg pitch=-2.68 deg feeder_rpm=0.00 wheel0_rpm=6080 wheel1_rpm=6120 wheel_delta=-40 projectile_speed=19.00 gate=0x00 switch=0 rc=0 sticks=0 imu=0 serial=0 control=0 yaw_armed=0 pitch_active=0
+[2026-10-18 18:17:30.528] [info] [DRYRUN] measured_gimbal=(4.687,0.037,-0.173) measured_world=(2.706,-3.831,0.046) tracked_world=(2.639,-4.394,0.067) target_gimbal_deg=(0.45,-2.11) target_world_deg=(-54.76,0.56) gimbal_deg=(-55.21,-2.68) armor_y_px=661.4 pixel_error_deg=(-0.17,2.66) ballistic=(range=4.831m holdover=0.243m comp=2.84deg residual=-0.19deg) center_lead=0.00deg center_follow=false q_wxyz=(0.885934,0.010817,-0.020688,0.463223) cmd_deg=(-58.18,-3.09) packed_pitch_deg=-3.09 yaw_pi=(error=nandeg integral=0.00deg output=0.00deg) control=true shoot=false
+[2026-10-18 18:17:30.648] [info] [SYNC][XUC] mode=1 yaw=61.31 deg pitch=-2.98 deg feeder_rpm=-4.00 wheel0_rpm=6120 wheel1_rpm=6120 wheel_delta=0 projectile_speed=19.00 gate=0x00 switch=0 rc=0 sticks=0 imu=0 serial=0 control=0 yaw_armed=0 pitch_active=0
+[2026-10-18 18:17:30.785] [info] [SYNC][XUC] mode=1 yaw=55.54 deg pitch=-2.80 deg feeder_rpm=3.00 wheel0_rpm=6000 wheel1_rpm=6000 wheel_delta=0 projectile_speed=19.00 gate=0x00 switch=0 rc=0 sticks=0 imu=0 serial=0 control=0 yaw_armed=0 pitch_active=0
+[2026-10-18 18:17:30.888] [info] [Target] geometry seeded: l=0.040 h=0.000
+[2026-10-18 18:17:30.919] [info] [SYNC][XUC] mode=1 yaw=58.90 deg pitch=-2.61 deg feeder_rpm=0.00 wheel0_rpm=5960 wheel1_rpm=6000 wheel_delta=-40 projectile_speed=19.00 gate=0x00 switch=0 rc=0 sticks=0 imu=0 serial=0 control=0 yaw_armed=0 pitch_active=0
+[2026-10-18 18:17:31.008] [info] [XUC][YAW] tracker convergence confirmed; actuator reacquired
+[2026-10-18 18:17:31.008] [info] [XUC][YAW] final slew limiter active: max_rate=30.0 deg/s
+[2026-10-18 18:17:31.077] [info] [SYNC][XUC] mode=1 yaw=58.83 deg pitch=-2.55 deg feeder_rpm=0.00 wheel0_rpm=6000 wheel1_rpm=6000 wheel_delta=0 projectile_speed=19.00 gate=0x00 switch=0 rc=0 sticks=0 imu=0 serial=0 control=0 yaw_armed=0 pitch_active=0
+[2026-10-18 18:17:31.110] [info] [ASSOC] primary_face=0 matches=1 cost=-0.062 detections=2 confidence=0.73
+[2026-10-18 18:17:31.110] [info] [ASSOC_D] det=0 face0 cost=-0.062 align=24.6deg conf=0.73
+[2026-10-18 18:17:31.110] [info] [ASSOC_D] det=1 face3 cost=0.626 align=65.4deg conf=0.57
+[2026-10-18 18:17:31.110] [info] [ASSOC_D] gate: total_det=2 cand=2 drop_name=0 drop_type=0 reject_cost=6 best_rejected=(det0,face1,cost=6.02) limit=0.80
+[2026-10-18 18:17:31.110] [info] [ASSOC_D] near-miss det0 face1 cost=6.02 = centre 1.43^2->2.04 + angle 4.49^2*0.20->4.03 + range 0.32^2*0.20->0.02 - conf 0.07 | pixels=93.8 scale=65.7 angle_deg=89.8
+[2026-10-18 18:17:31.110] [info] [ASSOC_D]  selected: det0->face0 (-0.062) det1->face3 (0.626)
+[2026-10-18 18:17:31.110] [info] [ASSOC_D] ekf r=0.260 l=0.040 h=0.000 yaw=-32.0deg omega=+2.266
+[2026-10-18 18:17:31.110] [info] [ASSOC_M] det0 range=4.38m yaw=-31.8deg | f0:cost=-0.06 ang=+0 px=7 pred_r=4.37 | f1:cost=6.02 ang=-90 px=94 pred_r=4.74 | f2:cost=19.70 ang=-180 px=124 pred_r=4.84 | f3:cost=15.94 ang=+90 px=227 pred_r=4.49 |
+[2026-10-18 18:17:31.110] [info] [ASSOC_M] det1 range=4.80m yaw=-107.8deg | f0:cost=31.64 ang=-76 px=272 pred_r=4.37 | f1:cost=64.01 ang=-166 px=359 pred_r=4.74 | f2:cost=13.13 ang=+104 px=141 pred_r=4.84 | f3:cost=0.63 ang=+14 px=38 pred_r=4.49 |
+[2026-10-18 18:17:31.110] [info] [DRYRUN] measured_gimbal=(4.374,0.073,-0.145) measured_world=(2.328,-3.706,0.050) tracked_world=(2.321,-3.707,0.051) target_gimbal_deg=(0.96,-1.90) target_world_deg=(-57.87,0.65) gimbal_deg=(-58.83,-2.55) armor_y_px=652.4 pixel_error_deg=(-0.67,2.46) ballistic=(range=4.322m holdover=0.191m comp=2.49deg residual=-0.04deg) center_lead=0.00deg center_follow=false q_wxyz=(0.870887,0.010937,-0.019400,0.490978) cmd_deg=(-58.10,-2.55) packed_pitch_deg=-2.55 yaw_pi=(error=nandeg integral=0.00deg output=0.00deg) control=true shoot=false
+[2026-10-18 18:17:31.240] [info] [SYNC][XUC] mode=1 yaw=58.29 deg pitch=-2.62 deg feeder_rpm=0.00 wheel0_rpm=6000 wheel1_rpm=5960 wheel_delta=40 projectile_speed=19.00 gate=0x00 switch=0 rc=0 sticks=0 imu=0 serial=0 control=0 yaw_armed=0 pitch_active=0
+[2026-10-18 18:17:31.394] [info] [SYNC][XUC] mode=1 yaw=58.29 deg pitch=-2.64 deg feeder_rpm=0.00 wheel0_rpm=6000 wheel1_rpm=6000 wheel_delta=0 projectile_speed=19.00 gate=0x00 switch=0 rc=0 sticks=0 imu=0 serial=0 control=0 yaw_armed=0 pitch_active=0
+[2026-10-18 18:17:31.426] [info] [ASSOC] primary_face=3 matches=2 cost=-0.063 detections=2 confidence=0.87
+[2026-10-18 18:17:31.426] [info] [ASSOC_D] det=0 face3 cost=-0.063 align=16.1deg conf=0.87
+[2026-10-18 18:17:31.426] [info] [ASSOC_D] det=1 face0 cost=0.624 align=73.9deg conf=0.05
+[2026-10-18 18:17:31.426] [info] [ASSOC_D] gate: total_det=2 cand=2 drop_name=0 drop_type=0 reject_cost=6 best_rejected=(det0,face2,cost=6.24) limit=0.80
+[2026-10-18 18:17:31.426] [info] [ASSOC_D] near-miss det0 face2 cost=6.24 = centre 1.50^2->2.25 + angle 4.50^2*0.20->4.05 + range 0.35^2*0.20->0.02 - conf 0.09 | pixels=85.4 scale=56.9 angle_deg=90.0
+[2026-10-18 18:17:31.426] [info] [ASSOC_D]  selected: det1->face0 (0.624) det0->face3 (-0.063)
+[2026-10-18 18:17:31.426] [info] [ASSOC_D] ekf r=0.266 l=0.054 h=-0.001 yaw=18.7deg omega=+3.285  <<< L/H NONZERO
+[2026-10-18 18:17:31.426] [info] [ASSOC_M] det0 range=4.32m yaw=-71.3deg | f0:cost=18.36 ang=-90 px=216 pred_r=4.57 | f1:cost=19.94 ang=-180 px=111 pred_r=4.94 | f2:cost=6.24 ang=+90 px=85 pred_r=4.71 | f3:cost=-0.06 ang=+0 px=9 pred_r=4.32 |
+[2026-10-18 18:17:31.426] [info] [ASSOC_M] det1 range=4.78m yaw=+3.7deg | f0:cost=0.62 ang=-15 px=35 pred_r=4.57 | f1:cost=13.70 ang=-105 px=140 pred_r=4.94 | f2:cost=60.68 ang=+165 px=336 pred_r=4.71 | f3:cost=27.21 ang=+75 px=242 pred_r=4.32 |
+[2026-10-18 18:17:31.426] [info] [RANGE] raw=4.780m model=4.337m filtered=4.379m model_used=1 raw_limited=1
+[2026-10-18 18:17:31.430] [info] [PERF] 总耗时=36.5ms (检测=31.0ms, 跟踪=1.1ms), FPS=27.4
+[2026-10-18 18:17:31.430] [info] 📊 [CAMERA FPS] 瞬时帧率=27.3fps, 平均帧率=33.5fps, 总帧数=450, 运行时间=13.5s
+[2026-10-18 18:17:31.507] [info] [YAWESKF] trusted=1 angle=+0.649 omega=+3.352 alpha=+2.132 raw_ekf_omega=+2.784 nis=0.60 accepted=21 rejected=0 whole_iekf_nis=0.44 armor_cv_trusted=1 armor_v=(-0.71,+0.14,+0.00) armor_cv_nis=0.21
+[2026-10-18 18:17:31.531] [info] [SYNC][XUC] mode=1 yaw=58.28 deg pitch=-2.66 deg feeder_rpm=0.00 wheel0_rpm=6000 wheel1_rpm=6040 wheel_delta=-40 projectile_speed=19.00 gate=0x00 switch=0 rc=0 sticks=0 imu=0 serial=0 control=0 yaw_armed=0 pitch_active=0
+[2026-10-18 18:17:31.666] [info] [SYNC][XUC] mode=1 yaw=54.69 deg pitch=-2.66 deg feeder_rpm=0.00 wheel0_rpm=6000 wheel1_rpm=6000 wheel_delta=0 projectile_speed=19.00 gate=0x00 switch=0 rc=0 sticks=0 imu=0 serial=0 control=0 yaw_armed=0 pitch_active=0
+[2026-10-18 18:17:31.691] [info] [ASSOC] primary_face=3 matches=1 cost=0.663 detections=1 confidence=0.71
+[2026-10-18 18:17:31.691] [info] [ASSOC_D] det=0 face3 cost=0.663 align=11.9deg conf=0.71
+[2026-10-18 18:17:31.691] [info] [ASSOC_D] gate: total_det=1 cand=1 drop_name=0 drop_type=0 reject_cost=3 best_rejected=(det0,face0,cost=6.16) limit=0.80
+[2026-10-18 18:17:31.691] [info] [ASSOC_D] near-miss det0 face0 cost=6.16 = centre 0.92^2->0.84 + angle 5.19^2*0.20->5.38 + range 0.28^2*0.20->0.02 - conf 0.07 | pixels=62.8 scale=68.6 angle_deg=103.8
+[2026-10-18 18:17:31.691] [info] [ASSOC_D] ekf r=0.272 l=0.054 h=-0.002 yaw=47.1deg omega=+1.531  <<< L/H NONZERO
+[2026-10-18 18:17:31.691] [info] [ASSOC_M] det0 range=4.09m yaw=-56.7deg | f0:cost=6.16 ang=-104 px=63 pred_r=4.39 | f1:cost=18.24 ang=+166 px=145 pred_r=4.64 | f2:cost=18.57 ang=+76 px=272 pred_r=4.28 | f3:cost=0.66 ang=-14 px=55 pred_r=4.01 |
+[2026-10-18 18:17:31.692] [info] [DRYRUN] measured_gimbal=(4.085,-0.158,-0.133) measured_world=(2.233,-3.426,0.057) tracked_world=(2.255,-3.769,0.056) target_gimbal_deg=(-2.21,-1.86) target_world_deg=(-56.90,0.80) gimbal_deg=(-54.69,-2.66) armor_y_px=652.1 pixel_error_deg=(2.73,2.45) ballistic=(range=4.089m holdover=0.170m comp=2.34deg residual=0.11deg) center_lead=0.00deg center_follow=false q_wxyz=(0.888033,0.010678,-0.020651,0.459191) cmd_deg=(-53.88,-2.43) packed_pitch_deg=-2.43 yaw_pi=(error=nandeg integral=0.00deg output=0.00deg) control=true shoot=false
+[2026-10-18 18:17:31.723] [info] [XUC][FIRE] cadence fallback available; fresh qualification required
+[2026-10-18 18:17:31.819] [info] [SYNC][XUC] mode=1 yaw=54.24 deg pitch=-2.66 deg feeder_rpm=0.00 wheel0_rpm=6000 wheel1_rpm=6040 wheel_delta=-40 projectile_speed=19.00 gate=0x00 switch=0 rc=0 sticks=0 imu=0 serial=0 control=0 yaw_armed=0 pitch_active=0
+[2026-10-18 18:17:31.871] [info] [XUC][FIRE] stable-window candidate started
+[2026-10-18 18:17:31.954] [info] [XUC][FIRE] qualified after 100 ms/4 frames, current_pixel_error_deg=(0.58,0.20) predicted_impact_yaw_error_deg=inf gyro_predict=false face_error=19.51deg committed_face=-1 face_align=infdeg phase_unc=nandeg gimbal_err=infdeg omega=-0.471rad_s armed=true
+[2026-10-18 18:17:31.954] [info] [SHOT] id=4 issue mode=1 gyro=0 event=0 cycle=-1 processing_age_ms=27.6 due_error_ms=+nan period_ms=nan window_deg=nan worst_deg=nan combined_deg=nan face=-1 face_align_deg=inf phase_unc_deg=nan gimbal_err_deg=inf
+[2026-10-18 18:17:31.958] [info] [SYNC][XUC] mode=1 yaw=57.09 deg pitch=-2.83 deg feeder_rpm=0.00 wheel0_rpm=6000 wheel1_rpm=5960 wheel_delta=40 projectile_speed=19.00 gate=0x00 switch=0 rc=0 sticks=0 imu=0 serial=0 control=0 yaw_armed=0 pitch_active=0
+[2026-10-18 18:17:31.994] [info] [XUC][FIRE] request inhibited until cadence fallback interval elapses
+[2026-10-18 18:17:31.994] [info] [XUC][FIRE] stable window reset
+[2026-10-18 18:17:31.997] [info] [SHOTADAPT] id=4 feeder_ms=26.96 samples=4 ready=0 delay_ms=85.00 pi95_ms=[65.00,105.00]
+[2026-10-18 18:17:31.997] [info] [SHOT] id=4 feeder_start command_to_feeder_ms=26.96 rpm=538
+[2026-10-18 18:17:32.132] [info] [SHOT] id=4 feeder_stop feeder_motion_ms=126.9
+[2026-10-18 18:17:32.132] [info] [XUC][FIRE] feeder stopped; post-feed hold=550 ms
+[2026-10-18 18:17:32.132] [info] [SYNC][XUC] mode=1 yaw=56.39 deg pitch=-2.65 deg feeder_rpm=25.00 wheel0_rpm=6000 wheel1_rpm=6040 wheel_delta=-40 projectile_speed=19.00 gate=0x00 switch=0 rc=0 sticks=0 imu=0 serial=0 control=0 yaw_armed=0 pitch_active=0
+[2026-10-18 18:17:32.288] [info] [SYNC][XUC] mode=1 yaw=60.72 deg pitch=-2.93 deg feeder_rpm=-4.00 wheel0_rpm=6080 wheel1_rpm=6040 wheel_delta=40 projectile_speed=19.00 gate=0x00 switch=0 rc=0 sticks=0 imu=0 serial=0 control=0 yaw_armed=0 pitch_active=0
+[2026-10-18 18:17:32.310] [info] [DRYRUN] measured_gimbal=(4.518,0.489,-0.187) measured_world=(2.638,-3.705,0.044) tracked_world=(2.540,-4.167,0.048) target_gimbal_deg=(6.18,-2.36) target_world_deg=(-54.55,0.55) gimbal_deg=(-60.72,-2.93) armor_y_px=674.1 pixel_error_deg=(-6.13,2.93) ballistic=(range=4.898m holdover=0.250m comp=2.89deg residual=0.05deg) center_lead=0.00deg center_follow=false q_wxyz=(0.862575,0.012919,-0.022053,0.505283) cmd_deg=(-59.22,-3.00) packed_pitch_deg=-3.00 yaw_pi=(error=nandeg integral=0.00deg output=0.00deg) control=true shoot=false
+[2026-10-18 18:17:32.443] [info] [SYNC][XUC] mode=1 yaw=58.60 deg pitch=-2.86 deg feeder_rpm=0.00 wheel0_rpm=6080 wheel1_rpm=6040 wheel_delta=40 projectile_speed=19.00 gate=0x00 switch=0 rc=0 sticks=0 imu=0 serial=0 control=0 yaw_armed=0 pitch_active=0
+[2026-10-18 18:17:32.600] [info] [SYNC][XUC] mode=1 yaw=55.38 deg pitch=-3.06 deg feeder_rpm=0.00 wheel0_rpm=6000 wheel1_rpm=6000 wheel_delta=0 projectile_speed=19.00 gate=0x00 switch=0 rc=0 sticks=0 imu=0 serial=0 control=0 yaw_armed=0 pitch_active=0
+[2026-10-18 18:17:32.750] [info] [SYNC][XUC] mode=1 yaw=51.35 deg pitch=-2.78 deg feeder_rpm=0.00 wheel0_rpm=5960 wheel1_rpm=6000 wheel_delta=-40 projectile_speed=19.00 gate=0x00 switch=0 rc=0 sticks=0 imu=0 serial=0 control=0 yaw_armed=0 pitch_active=0
+[2026-10-18 18:17:32.841] [info] [Target] geometry seeded: l=0.040 h=0.000
+[2026-10-18 18:17:32.873] [info] [ASSOC] primary_face=0 matches=1 cost=0.394 detections=2 confidence=0.87
+[2026-10-18 18:17:32.873] [info] [ASSOC_D] det=0 face3 cost=0.568 align=77.6deg conf=0.31
+[2026-10-18 18:17:32.873] [info] [ASSOC_D] det=1 face0 cost=0.394 align=12.4deg conf=0.87
+[2026-10-18 18:17:32.873] [info] [ASSOC_D] gate: total_det=2 cand=2 drop_name=0 drop_type=0 reject_cost=6 best_rejected=(det1,face1,cost=5.55) limit=0.80
+[2026-10-18 18:17:32.873] [info] [ASSOC_D] near-miss det1 face1 cost=5.55 = centre 1.69^2->2.87 + angle 3.69^2*0.20->2.72 + range 0.52^2*0.20->0.05 - conf 0.09 | pixels=97.6 scale=57.6 angle_deg=73.8
+[2026-10-18 18:17:32.873] [info] [ASSOC_D]  selected: det1->face0 (0.394) det0->face3 (0.568)
+[2026-10-18 18:17:32.873] [info] [ASSOC_D] ekf r=0.260 l=0.040 h=0.000 yaw=-43.7deg omega=+0.000
+[2026-10-18 18:17:32.873] [info] [ASSOC_M] det0 range=4.82m yaw=-106.5deg | f0:cost=20.72 ang=-63 px=232 pred_r=4.45 | f1:cost=57.61 ang=-153 px=363 pred_r=4.77 | f2:cost=16.19 ang=+117 px=164 pred_r=4.96 | f3:cost=0.57 ang=+27 px=25 pred_r=4.65 |
+[2026-10-18 18:17:32.873] [info] [ASSOC_M] det1 range=4.20m yaw=-27.5deg | f0:cost=0.39 ang=+16 px=34 pred_r=4.45 | f1:cost=5.55 ang=-74 px=98 pred_r=4.77 | f2:cost=16.52 ang=-164 px=102 pred_r=4.96 | f3:cost=23.00 ang=+106 px=240 pred_r=4.65 |
+[2026-10-18 18:17:32.913] [info] [SYNC][XUC] mode=1 yaw=56.87 deg pitch=-2.81 deg feeder_rpm=0.00 wheel0_rpm=6000 wheel1_rpm=6000 wheel_delta=0 projectile_speed=19.00 gate=0x00 switch=0 rc=0 sticks=0 imu=0 serial=0 control=0 yaw_armed=0 pitch_active=0
+[2026-10-18 18:17:32.937] [info] [RANGE] raw=4.262m model=4.251m filtered=4.271m model_used=1 raw_limited=0
+[2026-10-18 18:17:32.937] [info] [DRYRUN] measured_gimbal=(4.259,-0.114,-0.139) measured_world=(2.232,-3.631,0.070) tracked_world=(2.226,-3.622,0.069) target_gimbal_deg=(-1.54,-1.87) target_world_deg=(-58.41,0.94) gimbal_deg=(-56.87,-2.81) armor_y_px=651.5 pixel_error_deg=(1.97,2.44) ballistic=(range=4.271m holdover=0.186m comp=2.46deg residual=-0.02deg) center_lead=0.00deg center_follow=false q_wxyz=(0.879074,0.011684,-0.021575,0.476053) cmd_deg=(-57.95,-2.74) packed_pitch_deg=-2.74 yaw_pi=(error=nandeg integral=0.00deg output=0.00deg) control=false shoot=false
+[2026-10-18 18:17:32.940] [info] [PERF] 总耗时=26.4ms (检测=22.8ms, 跟踪=0.7ms), FPS=37.9
+[2026-10-18 18:17:32.940] [info] 📊 [CAMERA FPS] 瞬时帧率=37.4fps, 平均帧率=33.4fps, 总帧数=500, 运行时间=15.0s
+[2026-10-18 18:17:32.971] [info] [XUC][YAW] tracker convergence confirmed; actuator reacquired
+[2026-10-18 18:17:32.971] [info] [XUC][YAW] final slew limiter active: max_rate=30.0 deg/s
+[2026-10-18 18:17:33.072] [info] [YAWESKF] trusted=0 angle=-0.030 omega=+3.153 alpha=+2.989 raw_ekf_omega=+2.589 nis=0.33 accepted=7 rejected=0 whole_iekf_nis=0.73 armor_cv_trusted=0 armor_v=(+0.00,+0.00,+0.00) armor_cv_nis=0.00
+[2026-10-18 18:17:33.075] [info] [SYNC][XUC] mode=1 yaw=56.15 deg pitch=-2.67 deg feeder_rpm=0.00 wheel0_rpm=6000 wheel1_rpm=5960 wheel_delta=40 projectile_speed=19.00 gate=0x00 switch=0 rc=0 sticks=0 imu=0 serial=0 control=0 yaw_armed=0 pitch_active=0
+[2026-10-18 18:17:33.189] [info] [ASSOC] primary_face=3 matches=1 cost=-0.077 detections=2 confidence=0.87
+[2026-10-18 18:17:33.189] [info] [ASSOC_D] det=0 face3 cost=-0.077 align=15.4deg conf=0.87
+[2026-10-18 18:17:33.189] [info] [ASSOC_D] gate: total_det=2 cand=1 drop_name=0 drop_type=0 reject_cost=7 best_rejected=(det1,face0,cost=1.13) limit=0.80
+[2026-10-18 18:17:33.189] [info] [ASSOC_D] near-miss det1 face0 cost=1.13 = centre 1.04^2->1.08 + angle 0.64^2*0.20->0.08 + range 0.02^2*0.20->0.00 - conf 0.03 | pixels=50.1 scale=48.2 angle_deg=12.8
+[2026-10-18 18:17:33.189] [info] [ASSOC_D] ekf r=0.267 l=0.044 h=-0.003 yaw=19.6deg omega=+3.080
+[2026-10-18 18:17:33.189] [info] [ASSOC_M] det0 range=4.38m yaw=-66.1deg | f0:cost=16.91 ang=-86 px=204 pred_r=4.60 | f1:cost=18.30 ang=-176 px=95 pred_r=4.97 | f2:cost=7.38 ang=+94 px=97 pred_r=4.75 | f3:cost=-0.08 ang=+4 px=2 pred_r=4.37 |
+[2026-10-18 18:17:33.189] [info] [ASSOC_M] det1 range=4.63m yaw=+6.9deg | f0:cost=1.13 ang=-13 px=50 pred_r=4.60 | f1:cost=16.13 ang=-103 px=159 pred_r=4.97 | f2:cost=66.77 ang=+167 px=350 pred_r=4.75 | f3:cost=30.28 ang=+77 px=252 pred_r=4.37 |
+[2026-10-18 18:17:33.216] [info] [SYNC][XUC] mode=1 yaw=56.80 deg pitch=-2.73 deg feeder_rpm=0.00 wheel0_rpm=6000 wheel1_rpm=6000 wheel_delta=0 projectile_speed=19.00 gate=0x00 switch=0 rc=0 sticks=0 imu=0 serial=0 control=0 yaw_armed=0 pitch_active=0
+[2026-10-18 18:17:33.356] [info] [SYNC][XUC] mode=1 yaw=59.17 deg pitch=-2.65 deg feeder_rpm=0.00 wheel0_rpm=6000 wheel1_rpm=6000 wheel_delta=0 projectile_speed=19.00 gate=0x00 switch=0 rc=0 sticks=0 imu=0 serial=0 control=0 yaw_armed=0 pitch_active=0
+[2026-10-18 18:17:33.503] [info] [XUC][FIRE] cadence fallback available; fresh qualification required
+[2026-10-18 18:17:33.507] [info] [SYNC][XUC] mode=1 yaw=52.30 deg pitch=-2.73 deg feeder_rpm=0.00 wheel0_rpm=6000 wheel1_rpm=6000 wheel_delta=0 projectile_speed=19.00 gate=0x00 switch=0 rc=0 sticks=0 imu=0 serial=0 control=0 yaw_armed=0 pitch_active=0
+[2026-10-18 18:17:33.539] [info] [DRYRUN] measured_gimbal=(3.949,-0.269,-0.134) measured_world=(2.203,-3.291,0.055) tracked_world=(2.258,-3.672,0.056) target_gimbal_deg=(-3.90,-1.93) target_world_deg=(-56.20,0.79) gimbal_deg=(-52.30,-2.73) armor_y_px=656.5 pixel_error_deg=(4.54,2.55) ballistic=(range=4.059m holdover=0.167m comp=2.32deg residual=0.23deg) center_lead=0.00deg center_follow=false q_wxyz=(0.897384,0.010498,-0.021382,0.440608) cmd_deg=(-52.81,-2.50) packed_pitch_deg=-2.50 yaw_pi=(error=nandeg integral=0.00deg output=0.00deg) control=true shoot=false
+[2026-10-18 18:17:33.594] [info] [XUC][FIRE] stable-window candidate started
+[2026-10-18 18:17:33.662] [info] [SYNC][XUC] mode=1 yaw=55.86 deg pitch=-2.66 deg feeder_rpm=0.00 wheel0_rpm=6000 wheel1_rpm=6000 wheel_delta=0 projectile_speed=19.00 gate=0x00 switch=0 rc=0 sticks=0 imu=0 serial=0 control=0 yaw_armed=0 pitch_active=0
+[2026-10-18 18:17:33.680] [info] [XUC][FIRE] stable window reset
+[2026-10-18 18:17:33.773] [info] [ASSOC] primary_face=2 matches=1 cost=0.481 detections=2 confidence=0.47
+[2026-10-18 18:17:33.773] [info] [ASSOC_D] det=0 face2 cost=0.481 align=78.6deg conf=0.47
+[2026-10-18 18:17:33.773] [info] [ASSOC_D] gate: total_det=2 cand=1 drop_name=0 drop_type=0 reject_cost=7 best_rejected=(det1,face3,cost=1.29) limit=0.80
+[2026-10-18 18:17:33.773] [info] [ASSOC_D] near-miss det1 face3 cost=1.29 = centre 1.10^2->1.22 + angle 0.84^2*0.20->0.14 + range 0.09^2*0.20->0.00 - conf 0.07 | pixels=61.7 scale=55.9 angle_deg=16.8
+[2026-10-18 18:17:33.773] [info] [ASSOC_D] ekf r=0.268 l=0.035 h=-0.003 yaw=44.9deg omega=-0.482
+[2026-10-18 18:17:33.773] [info] [ASSOC_M] det0 range=5.19m yaw=-107.3deg | f0:cost=52.15 ang=-152 px=313 pred_r=4.92 | f1:cost=14.00 ang=+118 px=131 pred_r=5.16 | f2:cost=0.48 ang=+28 px=17 pred_r=4.81 | f3:cost=19.22 ang=-62 px=204 pred_r=4.56 |
+[2026-10-18 18:17:33.773] [info] [ASSOC_M] det1 range=4.46m yaw=-28.3deg | f0:cost=3.35 ang=-73 px=47 pred_r=4.92 | f1:cost=19.15 ang=-163 px=135 pred_r=5.16 | f2:cost=25.67 ang=+107 px=250 pred_r=4.81 | f3:cost=1.29 ang=+17 px=62 pred_r=4.56 |
+[2026-10-18 18:17:33.812] [info] [SYNC][XUC] mode=1 yaw=52.01 deg pitch=-2.67 deg feeder_rpm=0.00 wheel0_rpm=6000 wheel1_rpm=6000 wheel_delta=0 projectile_speed=19.00 gate=0x00 switch=0 rc=0 sticks=0 imu=0 serial=0 control=0 yaw_armed=0 pitch_active=0
+[2026-10-18 18:17:33.886] [info] [XUC][FIRE] stable-window candidate started
+[2026-10-18 18:17:33.948] [info] [SYNC][XUC] mode=1 yaw=58.74 deg pitch=-2.90 deg feeder_rpm=0.00 wheel0_rpm=6000 wheel1_rpm=6000 wheel_delta=0 projectile_speed=19.00 gate=0x00 switch=0 rc=0 sticks=0 imu=0 serial=0 control=0 yaw_armed=0 pitch_active=0
+[2026-10-18 18:17:33.978] [info] [XUC][FIRE] stable window reset
+[2026-10-18 18:17:33.999] [info] [XUC][FIRE] stable-window candidate started
+[2026-10-18 18:17:34.090] [info] [SYNC][XUC] mode=1 yaw=54.29 deg pitch=-3.27 deg feeder_rpm=0.00 wheel0_rpm=5960 wheel1_rpm=6000 wheel_delta=-40 projectile_speed=19.00 gate=0x00 switch=0 rc=0 sticks=0 imu=0 serial=0 control=0 yaw_armed=0 pitch_active=0
+[2026-10-18 18:17:34.111] [info] [XUC][FIRE] qualified after 100 ms/5 frames, current_pixel_error_deg=(-0.23,0.32) predicted_impact_yaw_error_deg=inf gyro_predict=false face_error=37.37deg committed_face=-1 face_align=infdeg phase_unc=nandeg gimbal_err=infdeg omega=+2.284rad_s armed=true
+[2026-10-18 18:17:34.111] [info] [DRYRUN] measured_gimbal=(4.661,0.041,-0.205) measured_world=(2.757,-3.764,0.061) tracked_world=(2.835,-4.177,0.055) target_gimbal_deg=(0.51,-2.52) target_world_deg=(-53.78,0.75) gimbal_deg=(-54.29,-3.27) armor_y_px=681.1 pixel_error_deg=(-0.23,3.09) ballistic=(range=4.720m holdover=0.231m comp=2.76deg residual=0.32deg) center_lead=0.00deg center_follow=false q_wxyz=(0.889489,0.013009,-0.025372,0.456067) cmd_deg=(-56.75,-2.94) packed_pitch_deg=-2.94 yaw_pi=(error=nandeg integral=0.00deg output=0.00deg) control=true shoot=true
+[2026-10-18 18:17:34.111] [info] [SHOT] id=5 issue mode=1 gyro=0 event=0 cycle=-1 processing_age_ms=34.4 due_error_ms=+nan period_ms=nan window_deg=nan worst_deg=nan combined_deg=nan face=-1 face_align_deg=inf phase_unc_deg=nan gimbal_err_deg=inf
+[2026-10-18 18:17:34.139] [info] [XUC][FIRE] request inhibited until cadence fallback interval elapses
+[2026-10-18 18:17:34.139] [info] [XUC][FIRE] stable window reset
+[2026-10-18 18:17:34.145] [info] [SHOTADAPT] id=5 feeder_ms=15.69 samples=5 ready=1 delay_ms=85.00 pi95_ms=[68.70,101.30]
+[2026-10-18 18:17:34.145] [info] [SHOT] id=5 feeder_start command_to_feeder_ms=15.69 rpm=640
+[2026-10-18 18:17:34.162] [info] [ASSOC] primary_face=2 matches=1 cost=-0.045 detections=1 confidence=0.48
+[2026-10-18 18:17:34.162] [info] [ASSOC_D] det=0 face2 cost=-0.045 align=10.4deg conf=0.48
+[2026-10-18 18:17:34.162] [info] [ASSOC_D] gate: total_det=1 cand=1 drop_name=0 drop_type=0 reject_cost=3 best_rejected=(det0,face1,cost=8.60) limit=0.80
+[2026-10-18 18:17:34.162] [info] [ASSOC_D] near-miss det0 face1 cost=8.60 = centre 2.15^2->4.64 + angle 4.46^2*0.20->3.98 + range 0.34^2*0.20->0.02 - conf 0.05 | pixels=144.1 scale=66.9 angle_deg=89.2
+[2026-10-18 18:17:34.162] [info] [ASSOC_D] ekf r=0.274 l=0.033 h=0.002 yaw=114.9deg omega=+2.380
+[2026-10-18 18:17:34.162] [info] [ASSOC_M] det0 range=4.42m yaw=-65.9deg | f0:cost=16.69 ang=+179 px=53 pred_r=5.02 | f1:cost=8.60 ang=+89 px=144 pred_r=4.81 | f2:cost=-0.05 ang=-1 px=3 pred_r=4.48 | f3:cost=13.21 ang=-91 px=202 pred_r=4.70 |
+[2026-10-18 18:17:34.227] [info] [SYNC][XUC] mode=1 yaw=57.85 deg pitch=-2.94 deg feeder_rpm=911.00 wheel0_rpm=6040 wheel1_rpm=5960 wheel_delta=80 projectile_speed=19.00 gate=0x00 switch=0 rc=0 sticks=0 imu=0 serial=0 control=0 yaw_armed=0 pitch_active=0
+[2026-10-18 18:17:34.251] [info] [SHOT] id=5 feeder_stop feeder_motion_ms=120.1
+[2026-10-18 18:17:34.251] [info] [XUC][FIRE] feeder stopped; post-feed hold=550 ms
+[2026-10-18 18:17:34.366] [info] [SYNC][XUC] mode=1 yaw=52.57 deg pitch=-2.89 deg feeder_rpm=0.00 wheel0_rpm=6080 wheel1_rpm=6080 wheel_delta=0 projectile_speed=19.00 gate=0x00 switch=0 rc=0 sticks=0 imu=0 serial=0 control=0 yaw_armed=0 pitch_active=0
+[2026-10-18 18:17:34.392] [info] [RANGE] raw=4.023m model=4.046m filtered=4.153m model_used=1 raw_limited=0
+[2026-10-18 18:17:34.395] [info] [PERF] 总耗时=29.5ms (检测=25.7ms, 跟踪=0.4ms), FPS=33.9
+[2026-10-18 18:17:34.395] [info] 📊 [CAMERA FPS] 瞬时帧率=33.8fps, 平均帧率=33.5fps, 总帧数=550, 运行时间=16.4s
+[2026-10-18 18:17:34.482] [info] [ASSOC] primary_face=2 matches=1 cost=0.229 detections=1 confidence=0.65
+[2026-10-18 18:17:34.482] [info] [ASSOC_D] det=0 face2 cost=0.229 align=3.3deg conf=0.65
+[2026-10-18 18:17:34.482] [info] [ASSOC_D] gate: total_det=1 cand=1 drop_name=0 drop_type=0 reject_cost=3 best_rejected=(det0,face3,cost=12.91) limit=0.80
+[2026-10-18 18:17:34.482] [info] [ASSOC_D] near-miss det0 face3 cost=12.91 = centre 2.69^2->7.21 + angle 5.37^2*0.20->5.76 + range 0.17^2*0.20->0.01 - conf 0.06 | pixels=162.2 scale=60.4 angle_deg=107.3
+[2026-10-18 18:17:34.482] [info] [ASSOC_D] ekf r=0.276 l=0.034 h=0.001 yaw=127.6deg omega=+0.477
+[2026-10-18 18:17:34.482] [info] [ASSOC_M] det0 range=4.12m yaw=-69.7deg | f0:cost=13.80 ang=+163 px=47 pred_r=4.55 | f1:cost=17.54 ang=+73 px=234 pred_r=4.27 | f2:cost=0.23 ang=-17 px=23 pred_r=4.00 | f3:cost=12.91 ang=-107 px=162 pred_r=4.30 |
+[2026-10-18 18:17:34.504] [info] [YAWESKF] trusted=1 angle=+2.190 omega=+0.136 alpha=-3.225 raw_ekf_omega=+0.568 nis=0.02 accepted=42 rejected=0 whole_iekf_nis=1.83 armor_cv_trusted=1 armor_v=(-0.47,+0.04,-0.01) armor_cv_nis=5.71
+[2026-10-18 18:17:34.507] [info] [SYNC][XUC] mode=1 yaw=56.55 deg pitch=-2.65 deg feeder_rpm=0.00 wheel0_rpm=6160 wheel1_rpm=6040 wheel_delta=120 projectile_speed=19.00 gate=0x00 switch=0 rc=0 sticks=0 imu=0 serial=0 control=0 yaw_armed=0 pitch_active=0
+[2026-10-18 18:17:34.663] [info] [SYNC][XUC] mode=1 yaw=56.48 deg pitch=-2.57 deg feeder_rpm=0.00 wheel0_rpm=6000 wheel1_rpm=6000 wheel_delta=0 projectile_speed=19.00 gate=0x00 switch=0 rc=0 sticks=0 imu=0 serial=0 control=0 yaw_armed=0 pitch_active=0
+[2026-10-18 18:17:34.686] [info] [DRYRUN] measured_gimbal=(4.345,-0.112,-0.148) measured_world=(2.307,-3.686,0.048) tracked_world=(2.700,-3.992,0.045) target_gimbal_deg=(-1.48,-1.95) target_world_deg=(-57.95,0.63) gimbal_deg=(-56.48,-2.57) armor_y_px=655.0 pixel_error_deg=(1.89,2.52) ballistic=(range=4.227m holdover=0.182m comp=2.43deg residual=0.09deg) center_lead=0.00deg center_follow=false q_wxyz=(0.880767,0.010628,-0.019789,0.473017) cmd_deg=(-60.50,-2.41) packed_pitch_deg=-2.41 yaw_pi=(error=nandeg integral=0.00deg output=0.00deg) control=true shoot=false
+[2026-10-18 18:17:34.782] [info] [ASSOC] primary_face=2 matches=1 cost=-0.026 detections=2 confidence=0.87
+[2026-10-18 18:17:34.783] [info] [ASSOC_D] det=0 face2 cost=-0.026 align=23.7deg conf=0.87
+[2026-10-18 18:17:34.783] [info] [ASSOC_D] det=1 face1 cost=0.514 align=66.3deg conf=0.70
+[2026-10-18 18:17:34.783] [info] [ASSOC_D] gate: total_det=2 cand=2 drop_name=0 drop_type=0 reject_cost=6 best_rejected=(det0,face3,cost=5.30) limit=0.80
+[2026-10-18 18:17:34.783] [info] [ASSOC_D] near-miss det0 face3 cost=5.30 = centre 1.34^2->1.81 + angle 4.23^2*0.20->3.58 + range 0.00^2*0.20->0.00 - conf 0.09 | pixels=79.9 scale=59.4 angle_deg=84.6
+[2026-10-18 18:17:34.783] [info] [ASSOC_D]  selected: det1->face1 (0.514) det0->face2 (-0.026)
+[2026-10-18 18:17:34.783] [info] [ASSOC_D] ekf r=0.276 l=0.033 h=0.001 yaw=147.0deg omega=+0.955
+[2026-10-18 18:17:34.783] [info] [ASSOC_M] det0 range=4.84m yaw=-27.6deg | f0:cost=20.75 ang=-175 px=141 pred_r=4.97 | f1:cost=21.51 ang=+95 px=245 pred_r=4.60 | f2:cost=-0.03 ang=+5 px=9 pred_r=4.46 | f3:cost=5.30 ang=-85 px=80 pred_r=4.85 |
+[2026-10-18 18:17:34.783] [info] [ASSOC_M] det1 range=4.81m yaw=-95.6deg | f0:cost=11.95 ang=+117 px=130 pred_r=4.97 | f1:cost=0.51 ang=+27 px=26 pred_r=4.60 | f2:cost=22.57 ang=-63 px=262 pred_r=4.46 | f3:cost=48.70 ang=-153 px=351 pred_r=4.85 |
+[2026-10-18 18:17:34.821] [info] [SYNC][XUC] mode=1 yaw=60.92 deg pitch=-2.55 deg feeder_rpm=0.00 wheel0_rpm=6000 wheel1_rpm=6000 wheel_delta=0 projectile_speed=19.00 gate=0x00 switch=0 rc=0 sticks=0 imu=0 serial=0 control=0 yaw_armed=0 pitch_active=0
+[2026-10-18 18:17:34.990] [info] [SYNC][XUC] mode=1 yaw=56.03 deg pitch=-2.51 deg feeder_rpm=0.00 wheel0_rpm=6000 wheel1_rpm=5960 wheel_delta=40 projectile_speed=19.00 gate=0x00 switch=0 rc=0 sticks=0 imu=0 serial=0 control=0 yaw_armed=0 pitch_active=0
+[2026-10-18 18:17:35.146] [info] [SYNC][XUC] mode=1 yaw=61.21 deg pitch=-2.48 deg feeder_rpm=-4.00 wheel0_rpm=6000 wheel1_rpm=6000 wheel_delta=0 projectile_speed=19.00 gate=0x00 switch=0 rc=0 sticks=0 imu=0 serial=0 control=0 yaw_armed=0 pitch_active=0
+[2026-10-18 18:17:35.287] [info] [SYNC][XUC] mode=1 yaw=51.27 deg pitch=-2.72 deg feeder_rpm=0.00 wheel0_rpm=6000 wheel1_rpm=5960 wheel_delta=40 projectile_speed=19.00 gate=0x00 switch=0 rc=0 sticks=0 imu=0 serial=0 control=0 yaw_armed=0 pitch_active=0
+[2026-10-18 18:17:35.308] [info] [DRYRUN] measured_gimbal=(3.995,-0.337,-0.137) measured_world=(2.238,-3.328,0.053) tracked_world=(2.741,-3.705,0.054) target_gimbal_deg=(-4.82,-1.95) target_world_deg=(-56.09,0.76) gimbal_deg=(-51.27,-2.72) armor_y_px=657.5 pixel_error_deg=(5.50,2.57) ballistic=(range=4.141m holdover=0.174m comp=2.37deg residual=0.20deg) center_lead=0.00deg center_follow=false q_wxyz=(0.901317,0.010275,-0.021412,0.432509) cmd_deg=(-55.61,-2.55) packed_pitch_deg=-2.55 yaw_pi=(error=nandeg integral=0.00deg output=0.00deg) control=true shoot=false
+[2026-10-18 18:17:35.423] [info] [SYNC][XUC] mode=1 yaw=58.73 deg pitch=-2.56 deg feeder_rpm=0.00 wheel0_rpm=6000 wheel1_rpm=6000 wheel_delta=0 projectile_speed=19.00 gate=0x00 switch=0 rc=0 sticks=0 imu=0 serial=0 control=0 yaw_armed=0 pitch_active=0
+[2026-10-18 18:17:35.530] [info] [Target] geometry seeded: l=0.040 h=0.000
+[2026-10-18 18:17:35.563] [info] [SYNC][XUC] mode=1 yaw=53.68 deg pitch=-2.50 deg feeder_rpm=0.00 wheel0_rpm=6040 wheel1_rpm=6000 wheel_delta=40 projectile_speed=19.00 gate=0x00 switch=0 rc=0 sticks=0 imu=0 serial=0 control=0 yaw_armed=0 pitch_active=0
+[2026-10-18 18:17:35.583] [info] [ASSOC] primary_face=0 matches=1 cost=-0.053 detections=2 confidence=0.87
+[2026-10-18 18:17:35.583] [info] [ASSOC_D] det=1 face0 cost=-0.053 align=20.7deg conf=0.87
+[2026-10-18 18:17:35.583] [info] [ASSOC_D] gate: total_det=2 cand=1 drop_name=0 drop_type=0 reject_cost=7 best_rejected=(det0,face3,cost=1.28) limit=0.80
+[2026-10-18 18:17:35.583] [info] [ASSOC_D] near-miss det0 face3 cost=1.28 = centre 1.03^2->1.06 + angle 1.11^2*0.20->0.25 + range 0.13^2*0.20->0.00 - conf 0.03 | pixels=46.2 scale=44.9 angle_deg=22.3
+[2026-10-18 18:17:35.583] [info] [ASSOC_D] ekf r=0.260 l=0.040 h=0.000 yaw=-36.9deg omega=+0.103
+[2026-10-18 18:17:35.583] [info] [ASSOC_M] det0 range=4.62m yaw=-104.7deg | f0:cost=36.30 ang=-68 px=262 pred_r=4.63 | f1:cost=76.76 ang=-158 px=360 pred_r=4.99 | f2:cost=18.20 ang=+112 px=155 pred_r=5.12 | f3:cost=1.28 ang=+22 px=46 pred_r=4.78 |
+[2026-10-18 18:17:35.583] [info] [ASSOC_M] det1 range=4.45m yaw=-29.7deg | f0:cost=-0.05 ang=+7 px=4 pred_r=4.63 | f1:cost=5.64 ang=-83 px=95 pred_r=4.99 | f2:cost=18.00 ang=-173 px=111 pred_r=5.12 | f3:cost=16.85 ang=+97 px=219 pred_r=4.78 |
+[2026-10-18 18:17:35.642] [info] [XUC][YAW] tracker convergence confirmed; actuator reacquired
+[2026-10-18 18:17:35.642] [info] [XUC][YAW] final slew limiter active: max_rate=30.0 deg/s
+[2026-10-18 18:17:35.676] [info] [XUC][FIRE] cadence fallback available; fresh qualification required
+[2026-10-18 18:17:35.724] [info] [SYNC][XUC] mode=1 yaw=53.86 deg pitch=-2.51 deg feeder_rpm=0.00 wheel0_rpm=6000 wheel1_rpm=6000 wheel_delta=0 projectile_speed=19.00 gate=0x00 switch=0 rc=0 sticks=0 imu=0 serial=0 control=0 yaw_armed=0 pitch_active=0
+[2026-10-18 18:17:35.793] [info] [XUC][FIRE] stable-window candidate started
+[2026-10-18 18:17:35.828] [info] [XUC][FIRE] stable window reset
+[2026-10-18 18:17:35.898] [info] [XUC][FIRE] stable-window candidate started
+[2026-10-18 18:17:35.901] [info] [SYNC][XUC] mode=1 yaw=56.88 deg pitch=-2.52 deg feeder_rpm=0.00 wheel0_rpm=6000 wheel1_rpm=6000 wheel_delta=0 projectile_speed=19.00 gate=0x00 switch=0 rc=0 sticks=0 imu=0 serial=0 control=0 yaw_armed=0 pitch_active=0
+[2026-10-18 18:17:35.920] [info] [ASSOC] primary_face=3 matches=1 cost=-0.074 detections=1 confidence=0.78
+[2026-10-18 18:17:35.921] [info] [ASSOC_D] det=0 face3 cost=-0.074 align=8.4deg conf=0.78
+[2026-10-18 18:17:35.921] [info] [ASSOC_D] gate: total_det=1 cand=1 drop_name=0 drop_type=0 reject_cost=3 best_rejected=(det0,face2,cost=8.90) limit=0.80
+[2026-10-18 18:17:35.921] [info] [ASSOC_D] near-miss det0 face2 cost=8.90 = centre 2.17^2->4.69 + angle 4.62^2*0.20->4.27 + range 0.30^2*0.20->0.02 - conf 0.08 | pixels=128.5 scale=59.3 angle_deg=92.4
+[2026-10-18 18:17:35.921] [info] [ASSOC_D] ekf r=0.265 l=0.061 h=-0.003 yaw=26.7deg omega=+3.019  <<< L/H NONZERO
+[2026-10-18 18:17:35.921] [info] [ASSOC_M] det0 range=4.24m yaw=-60.9deg | f0:cost=13.69 ang=-88 px=187 pred_r=4.50 | f1:cost=16.54 ang=-178 px=53 pred_r=4.85 | f2:cost=8.90 ang=+92 px=129 pred_r=4.58 | f3:cost=-0.07 ang=+2 px=2 pred_r=4.21 |
+[2026-10-18 18:17:35.921] [info] [RANGE] raw=4.243m model=4.220m filtered=4.296m model_used=1 raw_limited=0
+[2026-10-18 18:17:35.921] [info] [DRYRUN] measured_gimbal=(4.236,0.194,-0.144) measured_world=(2.478,-3.444,0.043) tracked_world=(2.383,-3.838,0.046) target_gimbal_deg=(2.62,-1.94) target_world_deg=(-54.27,0.57) gimbal_deg=(-56.88,-2.52) armor_y_px=655.0 pixel_error_deg=(-2.38,2.51) ballistic=(range=4.296m holdover=0.188m comp=2.48deg residual=0.04deg) center_lead=0.00deg center_follow=false q_wxyz=(0.879086,0.010473,-0.019335,0.476156) cmd_deg=(-57.49,-2.59) packed_pitch_deg=-2.59 yaw_pi=(error=nandeg integral=0.00deg output=0.00deg) control=true shoot=false
+[2026-10-18 18:17:35.924] [info] [PERF] 总耗时=23.0ms (检测=19.5ms, 跟踪=0.5ms), FPS=43.4
+[2026-10-18 18:17:35.924] [info] 📊 [CAMERA FPS] 瞬时帧率=43.2fps, 平均帧率=33.4fps, 总帧数=600, 运行时间=17.9s
+[2026-10-18 18:17:35.979] [info] [XUC][FIRE] qualified after 84 ms/4 frames, current_pixel_error_deg=(-2.83,0.09) predicted_impact_yaw_error_deg=inf gyro_predict=false face_error=33.77deg committed_face=-1 face_align=infdeg phase_unc=nandeg gimbal_err=infdeg omega=+3.172rad_s armed=true
+[2026-10-18 18:17:35.980] [info] [SHOT] id=6 issue mode=1 gyro=0 event=0 cycle=-1 processing_age_ms=36.0 due_error_ms=+nan period_ms=nan window_deg=nan worst_deg=nan combined_deg=nan face=-1 face_align_deg=inf phase_unc_deg=nan gimbal_err_deg=inf
+[2026-10-18 18:17:36.006] [info] [XUC][FIRE] request inhibited until cadence fallback interval elapses
+[2026-10-18 18:17:36.006] [info] [XUC][FIRE] stable window reset
+[2026-10-18 18:17:36.015] [info] [SHOTADAPT] id=6 feeder_ms=21.72 samples=6 ready=1 delay_ms=84.98 pi95_ms=[73.08,96.87]
+[2026-10-18 18:17:36.015] [info] [SHOT] id=6 feeder_start command_to_feeder_ms=21.72 rpm=717
+[2026-10-18 18:17:36.053] [info] [SYNC][XUC] mode=1 yaw=58.20 deg pitch=-2.59 deg feeder_rpm=2182.00 wheel0_rpm=6000 wheel1_rpm=6000 wheel_delta=0 projectile_speed=19.00 gate=0x00 switch=0 rc=0 sticks=0 imu=0 serial=0 control=0 yaw_armed=0 pitch_active=0
+[2026-10-18 18:17:36.068] [info] [YAWESKF] trusted=1 angle=+0.655 omega=+1.355 alpha=-4.770 raw_ekf_omega=+2.299 nis=0.07 accepted=17 rejected=0 whole_iekf_nis=0.53 armor_cv_trusted=1 armor_v=(-1.09,+0.65,+0.01) armor_cv_nis=0.53
+[2026-10-18 18:17:36.131] [info] [SHOT] id=6 feeder_stop feeder_motion_ms=116.8
+[2026-10-18 18:17:36.131] [info] [XUC][FIRE] feeder stopped; post-feed hold=550 ms
+[2026-10-18 18:17:36.152] [info] [SHOT] feeder_start_unpaired rpm=307
+[2026-10-18 18:17:36.184] [info] [XUC][FIRE] feeder stopped; post-feed hold=550 ms
+[2026-10-18 18:17:36.185] [info] [SYNC][XUC] mode=1 yaw=54.94 deg pitch=-2.72 deg feeder_rpm=-19.00 wheel0_rpm=6000 wheel1_rpm=6000 wheel_delta=0 projectile_speed=19.00 gate=0x00 switch=0 rc=0 sticks=0 imu=0 serial=0 control=0 yaw_armed=0 pitch_active=0
+[2026-10-18 18:17:36.317] [info] [SYNC][XUC] mode=1 yaw=54.29 deg pitch=-2.66 deg feeder_rpm=0.00 wheel0_rpm=6080 wheel1_rpm=6080 wheel_delta=0 projectile_speed=19.00 gate=0x00 switch=0 rc=0 sticks=0 imu=0 serial=0 control=0 yaw_armed=0 pitch_active=0
+[2026-10-18 18:17:36.468] [info] [SYNC][XUC] mode=1 yaw=54.27 deg pitch=-2.54 deg feeder_rpm=0.00 wheel0_rpm=6040 wheel1_rpm=6040 wheel_delta=0 projectile_speed=19.00 gate=0x00 switch=0 rc=0 sticks=0 imu=0 serial=0 control=0 yaw_armed=0 pitch_active=0
+[2026-10-18 18:17:36.501] [info] [DRYRUN] measured_gimbal=(4.371,-0.319,-0.129) measured_world=(2.295,-3.735,0.065) tracked_world=(2.337,-3.864,0.060) target_gimbal_deg=(-4.17,-1.68) target_world_deg=(-58.44,0.85) gimbal_deg=(-54.27,-2.54) armor_y_px=642.6 pixel_error_deg=(4.72,2.24) ballistic=(range=4.363m holdover=0.195m comp=2.53deg residual=-0.28deg) center_lead=0.00deg center_follow=false q_wxyz=(0.889731,0.010100,-0.019709,0.455947) cmd_deg=(-53.44,-2.74) packed_pitch_deg=-2.74 yaw_pi=(error=nandeg integral=0.00deg output=0.00deg) control=true shoot=false
+[2026-10-18 18:17:36.644] [info] [SYNC][XUC] mode=1 yaw=52.63 deg pitch=-2.58 deg feeder_rpm=0.00 wheel0_rpm=6000 wheel1_rpm=6000 wheel_delta=0 projectile_speed=19.00 gate=0x00 switch=0 rc=0 sticks=0 imu=0 serial=0 control=0 yaw_armed=0 pitch_active=0
+[2026-10-18 18:17:36.661] [info] [CORNER] accepted=568/800 (71.0%) last_score=0.124
+[2026-10-18 18:17:36.663] [info] [ASSOC] primary_face=3 matches=2 cost=0.445 detections=2 confidence=0.77
+[2026-10-18 18:17:36.663] [info] [ASSOC_D] det=0 face3 cost=0.445 align=39.8deg conf=0.77
+[2026-10-18 18:17:36.663] [info] [ASSOC_D] det=1 face0 cost=0.490 align=50.2deg conf=0.67
+[2026-10-18 18:17:36.663] [info] [ASSOC_D] gate: total_det=2 cand=2 drop_name=0 drop_type=0 reject_cost=6 best_rejected=(det1,face1,cost=5.35) limit=0.80
+[2026-10-18 18:17:36.663] [info] [ASSOC_D] near-miss det1 face1 cost=5.35 = centre 0.93^2->0.86 + angle 4.77^2*0.20->4.56 + range 0.08^2*0.20->0.00 - conf 0.07 | pixels=43.5 scale=46.9 angle_deg=95.5
+[2026-10-18 18:17:36.663] [info] [ASSOC_D]  selected: det1->face0 (0.490) det0->face3 (0.445)
+[2026-10-18 18:17:36.663] [info] [ASSOC_D] ekf r=0.267 l=0.068 h=-0.004 yaw=-5.2deg omega=-3.190  <<< L/H NONZERO
+[2026-10-18 18:17:36.663] [info] [ASSOC_M] det0 range=4.46m yaw=-78.6deg | f0:cost=21.15 ang=-73 px=231 pred_r=4.38 | f1:cost=30.35 ang=-163 px=222 pred_r=4.81 | f2:cost=5.74 ang=+107 px=19 pred_r=4.72 | f3:cost=0.45 ang=+17 px=33 pred_r=4.29 |
+[2026-10-18 18:17:36.663] [info] [ASSOC_M] det1 range=4.71m yaw=-10.6deg | f0:cost=0.49 ang=-5 px=34 pred_r=4.38 | f1:cost=5.35 ang=-95 px=44 pred_r=4.81 | f2:cost=51.68 ang=+175 px=284 pred_r=4.72 | f3:cost=43.79 ang=+85 px=298 pred_r=4.29 |
+[2026-10-18 18:17:36.803] [info] [SYNC][XUC] mode=1 yaw=55.19 deg pitch=-2.76 deg feeder_rpm=0.00 wheel0_rpm=6000 wheel1_rpm=6000 wheel_delta=0 projectile_speed=19.00 gate=0x00 switch=0 rc=0 sticks=0 imu=0 serial=0 control=0 yaw_armed=0 pitch_active=0
+[2026-10-18 18:17:36.948] [info] [SYNC][XUC] mode=1 yaw=55.10 deg pitch=-2.98 deg feeder_rpm=0.00 wheel0_rpm=6040 wheel1_rpm=6000 wheel_delta=40 projectile_speed=19.00 gate=0x00 switch=0 rc=0 sticks=0 imu=0 serial=0 control=0 yaw_armed=0 pitch_active=0
+[2026-10-18 18:17:37.094] [info] [SYNC][XUC] mode=1 yaw=51.12 deg pitch=-2.69 deg feeder_rpm=0.00 wheel0_rpm=6000 wheel1_rpm=6000 wheel_delta=0 projectile_speed=19.00 gate=0x00 switch=0 rc=0 sticks=0 imu=0 serial=0 control=0 yaw_armed=0 pitch_active=0
+[2026-10-18 18:17:37.119] [info] [DRYRUN] measured_gimbal=(4.195,-0.366,-0.141) measured_world=(2.349,-3.497,0.056) tracked_world=(3.022,-3.165,0.036) target_gimbal_deg=(-4.98,-1.91) target_world_deg=(-56.11,0.77) gimbal_deg=(-51.12,-2.69) armor_y_px=654.8 pixel_error_deg=(5.62,2.51) ballistic=(range=4.123m holdover=0.172m comp=2.36deg residual=0.15deg) center_lead=0.00deg center_follow=false q_wxyz=(0.901869,0.010133,-0.021185,0.431372) cmd_deg=(-50.44,-2.35) packed_pitch_deg=-2.35 yaw_pi=(error=nandeg integral=0.00deg output=0.00deg) control=true shoot=false
+[2026-10-18 18:17:37.252] [info] [SYNC][XUC] mode=1 yaw=49.58 deg pitch=-2.60 deg feeder_rpm=0.00 wheel0_rpm=6000 wheel1_rpm=6000 wheel_delta=0 projectile_speed=19.00 gate=0x00 switch=0 rc=0 sticks=0 imu=0 serial=0 control=0 yaw_armed=0 pitch_active=0
+[2026-10-18 18:17:37.363] [info] [Target] geometry seeded: l=0.040 h=0.000
+[2026-10-18 18:17:37.390] [info] [SYNC][XUC] mode=1 yaw=51.94 deg pitch=-2.60 deg feeder_rpm=0.00 wheel0_rpm=6000 wheel1_rpm=6000 wheel_delta=0 projectile_speed=19.00 gate=0x00 switch=0 rc=0 sticks=0 imu=0 serial=0 control=0 yaw_armed=0 pitch_active=0
+[2026-10-18 18:17:37.421] [info] [RANGE] raw=4.446m model=4.637m filtered=4.588m model_used=1 raw_limited=0
+[2026-10-18 18:17:37.424] [info] [PERF] 总耗时=34.2ms (检测=29.7ms, 跟踪=1.1ms), FPS=29.3
+[2026-10-18 18:17:37.424] [info] 📊 [CAMERA FPS] 瞬时帧率=29.2fps, 平均帧率=33.4fps, 总帧数=650, 运行时间=19.4s
+[2026-10-18 18:17:37.483] [info] [XUC][YAW] tracker convergence confirmed; actuator reacquired
+[2026-10-18 18:17:37.483] [info] [XUC][YAW] final slew limiter active: max_rate=30.0 deg/s
+[2026-10-18 18:17:37.545] [info] [XUC][FIRE] cadence fallback available; fresh qualification required
+[2026-10-18 18:17:37.554] [info] [SYNC][XUC] mode=1 yaw=51.98 deg pitch=-2.65 deg feeder_rpm=0.00 wheel0_rpm=6000 wheel1_rpm=5960 wheel_delta=40 projectile_speed=19.00 gate=0x00 switch=0 rc=0 sticks=0 imu=0 serial=0 control=0 yaw_armed=0 pitch_active=0
+[2026-10-18 18:17:37.619] [info] [YAWESKF] trusted=0 angle=-1.501 omega=+2.225 alpha=+3.900 raw_ekf_omega=+2.126 nis=0.14 accepted=8 rejected=0 whole_iekf_nis=3.04 armor_cv_trusted=1 armor_v=(-1.44,+1.34,-0.00) armor_cv_nis=0.03
+[2026-10-18 18:17:37.655] [info] [ASSOC] primary_face=0 matches=1 cost=0.018 detections=1 confidence=0.93
+[2026-10-18 18:17:37.655] [info] [ASSOC_D] det=0 face0 cost=0.018 align=20.8deg conf=0.93
+[2026-10-18 18:17:37.655] [info] [ASSOC_D] gate: total_det=1 cand=1 drop_name=0 drop_type=0 reject_cost=3 best_rejected=(det0,face3,cost=6.77) limit=0.80
+[2026-10-18 18:17:37.655] [info] [ASSOC_D] near-miss det0 face3 cost=6.77 = centre 1.71^2->2.94 + angle 4.41^2*0.20->3.88 + range 0.46^2*0.20->0.04 - conf 0.09 | pixels=97.6 scale=56.9 angle_deg=88.1
+[2026-10-18 18:17:37.655] [info] [ASSOC_D] ekf r=0.276 l=0.046 h=0.004 yaw=-76.3deg omega=+2.126
+[2026-10-18 18:17:37.655] [info] [ASSOC_M] det0 range=4.23m yaw=-78.2deg | f0:cost=0.02 ang=-2 px=19 pred_r=4.37 | f1:cost=25.42 ang=-92 px=262 pred_r=4.52 | f2:cost=21.08 ang=+178 px=130 pred_r=4.89 | f3:cost=6.77 ang=+88 px=98 pred_r=4.75 |
+[2026-10-18 18:17:37.655] [info] [XUC][FIRE] stable-window candidate started
+[2026-10-18 18:17:37.714] [info] [SYNC][XUC] mode=1 yaw=54.85 deg pitch=-3.05 deg feeder_rpm=0.00 wheel0_rpm=6000 wheel1_rpm=6040 wheel_delta=-40 projectile_speed=19.00 gate=0x00 switch=0 rc=0 sticks=0 imu=0 serial=0 control=0 yaw_armed=0 pitch_active=0
+[2026-10-18 18:17:37.742] [info] [XUC][FIRE] qualified after 84 ms/4 frames, current_pixel_error_deg=(-0.15,0.35) predicted_impact_yaw_error_deg=inf gyro_predict=false face_error=38.80deg committed_face=-1 face_align=infdeg phase_unc=nandeg gimbal_err=infdeg omega=+2.722rad_s armed=true
+[2026-10-18 18:17:37.742] [info] [DRYRUN] measured_gimbal=(4.310,0.036,-0.170) measured_world=(2.513,-3.506,0.059) tracked_world=(2.485,-3.436,0.060) target_gimbal_deg=(0.48,-2.26) target_world_deg=(-54.37,0.79) gimbal_deg=(-54.85,-3.05) armor_y_px=669.8 pixel_error_deg=(-0.15,2.84) ballistic=(range=4.321m holdover=0.191m comp=2.49deg residual=0.35deg) center_lead=0.00deg center_follow=false q_wxyz=(0.887303,0.012238,-0.023585,0.460422) cmd_deg=(-55.19,-2.78) packed_pitch_deg=-2.78 yaw_pi=(error=nandeg integral=0.00deg output=0.00deg) control=true shoot=true
+[2026-10-18 18:17:37.742] [info] [SHOT] id=7 issue mode=1 gyro=0 event=0 cycle=-1 processing_age_ms=47.6 due_error_ms=+nan period_ms=nan window_deg=nan worst_deg=nan combined_deg=nan face=-1 face_align_deg=inf phase_unc_deg=nan gimbal_err_deg=inf
+[2026-10-18 18:17:37.765] [info] [XUC][FIRE] request inhibited until cadence fallback interval elapses
+[2026-10-18 18:17:37.765] [info] [XUC][FIRE] stable window reset
+[2026-10-18 18:17:37.769] [info] [SHOTADAPT] id=7 feeder_ms=14.82 samples=7 ready=1 delay_ms=84.94 pi95_ms=[69.12,100.76]
+[2026-10-18 18:17:37.769] [info] [SHOT] id=7 feeder_start command_to_feeder_ms=14.82 rpm=706
+[2026-10-18 18:17:37.862] [info] [SYNC][XUC] mode=1 yaw=57.09 deg pitch=-2.92 deg feeder_rpm=399.00 wheel0_rpm=6000 wheel1_rpm=6000 wheel_delta=0 projectile_speed=19.00 gate=0x00 switch=0 rc=0 sticks=0 imu=0 serial=0 control=0 yaw_armed=0 pitch_active=0
+[2026-10-18 18:17:37.883] [info] [SHOT] id=7 feeder_stop feeder_motion_ms=119.7
+[2026-10-18 18:17:37.883] [info] [XUC][FIRE] feeder stopped; post-feed hold=550 ms
+[2026-10-18 18:17:37.937] [info] [ASSOC] primary_face=0 matches=1 cost=0.055 detections=1 confidence=0.86
+[2026-10-18 18:17:37.937] [info] [ASSOC_D] det=0 face0 cost=0.055 align=3.7deg conf=0.86
+[2026-10-18 18:17:37.937] [info] [ASSOC_D] gate: total_det=1 cand=1 drop_name=0 drop_type=0 reject_cost=3 best_rejected=(det0,face1,cost=14.46) limit=0.80
+[2026-10-18 18:17:37.937] [info] [ASSOC_D] near-miss det0 face1 cost=14.46 = centre 3.25^2->10.54 + angle 4.47^2*0.20->4.00 + range 0.16^2*0.20->0.01 - conf 0.09 | pixels=199.4 scale=61.4 angle_deg=89.4
+[2026-10-18 18:17:37.937] [info] [ASSOC_D] ekf r=0.279 l=0.051 h=0.005 yaw=-59.3deg omega=-0.298  <<< L/H NONZERO
+[2026-10-18 18:17:37.937] [info] [ASSOC_M] det0 range=4.09m yaw=-58.7deg | f0:cost=0.05 ang=+1 px=23 pred_r=3.99 | f1:cost=14.46 ang=-89 px=199 pred_r=4.26 | f2:cost=16.06 ang=-179 px=7 pred_r=4.54 | f3:cost=17.03 ang=+91 px=221 pred_r=4.30 |
+[2026-10-18 18:17:37.997] [info] [SYNC][XUC] mode=1 yaw=56.82 deg pitch=-2.75 deg feeder_rpm=0.00 wheel0_rpm=6040 wheel1_rpm=6080 wheel_delta=-40 projectile_speed=19.00 gate=0x00 switch=0 rc=0 sticks=0 imu=0 serial=0 control=0 yaw_armed=0 pitch_active=0
+[2026-10-18 18:17:38.143] [info] [SYNC][XUC] mode=1 yaw=58.28 deg pitch=-2.61 deg feeder_rpm=-8.00 wheel0_rpm=6040 wheel1_rpm=6040 wheel_delta=0 projectile_speed=19.00 gate=0x00 switch=0 rc=0 sticks=0 imu=0 serial=0 control=0 yaw_armed=0 pitch_active=0
+[2026-10-18 18:17:38.215] [info] [ASSOC] primary_face=0 matches=1 cost=0.249 detections=1 confidence=0.59
+[2026-10-18 18:17:38.215] [info] [ASSOC_D] det=0 face0 cost=0.249 align=6.1deg conf=0.59
+[2026-10-18 18:17:38.215] [info] [ASSOC_D] gate: total_det=1 cand=1 drop_name=0 drop_type=0 reject_cost=3 best_rejected=(det0,face1,cost=8.94) limit=0.80
+[2026-10-18 18:17:38.215] [info] [ASSOC_D] near-miss det0 face1 cost=8.94 = centre 2.51^2->6.32 + angle 3.65^2*0.20->2.66 + range 0.32^2*0.20->0.02 - conf 0.06 | pixels=146.7 scale=58.3 angle_deg=72.9
+[2026-10-18 18:17:38.215] [info] [ASSOC_D] ekf r=0.280 l=0.048 h=0.005 yaw=-50.5deg omega=-0.236
+[2026-10-18 18:17:38.215] [info] [ASSOC_M] det0 range=4.28m yaw=-33.4deg | f0:cost=0.25 ang=+17 px=24 pred_r=4.32 | f1:cost=8.94 ang=-73 px=147 pred_r=4.65 | f2:cost=14.39 ang=-163 px=62 pred_r=4.88 | f3:cost=22.30 ang=+107 px=238 pred_r=4.58 |
+[2026-10-18 18:17:38.314] [info] [SYNC][XUC] mode=1 yaw=59.92 deg pitch=-2.60 deg feeder_rpm=0.00 wheel0_rpm=6000 wheel1_rpm=6040 wheel_delta=-40 projectile_speed=19.00 gate=0x00 switch=0 rc=0 sticks=0 imu=0 serial=0 control=0 yaw_armed=0 pitch_active=0
+[2026-10-18 18:17:38.349] [info] [DRYRUN] measured_gimbal=(4.468,0.109,-0.142) measured_world=(2.334,-3.813,0.061) tracked_world=(2.341,-3.773,0.058) target_gimbal_deg=(1.40,-1.82) target_world_deg=(-58.53,0.78) gimbal_deg=(-59.92,-2.60) armor_y_px=648.2 pixel_error_deg=(-1.14,2.37) ballistic=(range=4.378m holdover=0.196m comp=2.53deg residual=-0.17deg) center_lead=0.00deg center_follow=false q_wxyz=(0.866130,0.011322,-0.019639,0.499304) cmd_deg=(-57.51,-2.73) packed_pitch_deg=-2.73 yaw_pi=(error=nandeg integral=0.00deg output=0.00deg) control=true shoot=false
+[2026-10-18 18:17:38.485] [info] [SYNC][XUC] mode=1 yaw=57.96 deg pitch=-2.63 deg feeder_rpm=0.00 wheel0_rpm=6000 wheel1_rpm=5960 wheel_delta=40 projectile_speed=19.00 gate=0x00 switch=0 rc=0 sticks=0 imu=0 serial=0 control=0 yaw_armed=0 pitch_active=0
+[2026-10-18 18:17:38.582] [info] [ASSOC] primary_face=3 matches=2 cost=0.393 detections=3 confidence=0.87
+[2026-10-18 18:17:38.582] [info] [ASSOC_D] det=0 face3 cost=0.393 align=11.6deg conf=0.87
+[2026-10-18 18:17:38.582] [info] [ASSOC_D] det=2 face0 cost=0.317 align=78.4deg conf=0.07
+[2026-10-18 18:17:38.582] [info] [ASSOC_D] gate: total_det=3 cand=2 drop_name=1 drop_type=0 reject_cost=6 best_rejected=(det0,face2,cost=5.89) limit=0.80
+[2026-10-18 18:17:38.582] [info] [ASSOC_D] near-miss det0 face2 cost=5.89 = centre 1.32^2->1.75 + angle 4.58^2*0.20->4.19 + range 0.44^2*0.20->0.04 - conf 0.09 | pixels=74.8 scale=56.5 angle_deg=91.5
+[2026-10-18 18:17:38.582] [info] [ASSOC_D]  selected: det2->face0 (0.317) det0->face3 (0.393)
+[2026-10-18 18:17:38.582] [info] [ASSOC_D] ekf r=0.284 l=0.059 h=0.003 yaw=22.7deg omega=+3.689  <<< L/H NONZERO
+[2026-10-18 18:17:38.582] [info] [ASSOC_M] det0 range=4.44m yaw=-65.7deg | f0:cost=20.99 ang=-88 px=234 pred_r=4.85 | f1:cost=19.83 ang=-178 px=112 pred_r=5.23 | f2:cost=5.89 ang=+92 px=75 pred_r=4.96 | f3:cost=0.39 ang=+2 px=39 pred_r=4.56 |
+[2026-10-18 18:17:38.582] [info] [ASSOC_M] det2 range=4.92m yaw=+2.3deg | f0:cost=0.32 ang=-20 px=16 pred_r=4.85 | f1:cost=14.46 ang=-110 px=138 pred_r=5.23 | f2:cost=58.81 ang=+160 px=325 pred_r=4.96 | f3:cost=21.92 ang=+70 px=211 pred_r=4.56 |
+[2026-10-18 18:17:38.641] [info] [SYNC][XUC] mode=1 yaw=55.98 deg pitch=-2.87 deg feeder_rpm=0.00 wheel0_rpm=6000 wheel1_rpm=6040 wheel_delta=-40 projectile_speed=19.00 gate=0x00 switch=0 rc=0 sticks=0 imu=0 serial=0 control=0 yaw_armed=0 pitch_active=0
+[2026-10-18 18:17:38.751] [info] [SYNC][XUC] mode=1 yaw=55.99 deg pitch=-2.85 deg feeder_rpm=0.00 wheel0_rpm=6000 wheel1_rpm=6040 wheel_delta=-40 projectile_speed=19.00 gate=0x00 switch=0 rc=0 sticks=0 imu=0 serial=0 control=0 yaw_armed=0 pitch_active=0
+[2026-10-18 18:17:38.784] [info] Switch to idle
+[2026-10-18 18:17:38.843] [info] [ASSOC] primary_face=3 matches=1 cost=-0.027 detections=1 confidence=0.80
+[2026-10-18 18:17:38.843] [info] [ASSOC_D] det=0 face3 cost=-0.027 align=9.9deg conf=0.80
+[2026-10-18 18:17:38.843] [info] [ASSOC_D] gate: total_det=1 cand=1 drop_name=0 drop_type=0 reject_cost=3 best_rejected=(det0,face0,cost=10.17) limit=0.80
+[2026-10-18 18:17:38.843] [info] [ASSOC_D] near-miss det0 face0 cost=10.17 = centre 2.29^2->5.25 + angle 4.99^2*0.20->4.98 + range 0.30^2*0.20->0.02 - conf 0.08 | pixels=136.2 scale=59.4 angle_deg=99.8
+[2026-10-18 18:17:38.843] [info] [ASSOC_D] ekf r=0.286 l=0.060 h=0.002 yaw=44.8deg omega=+1.862  <<< L/H NONZERO
+[2026-10-18 18:17:38.843] [info] [ASSOC_M] det0 range=4.06m yaw=-55.0deg | f0:cost=10.17 ang=-100 px=136 pred_r=4.38 | f1:cost=16.14 ang=+170 px=77 pred_r=4.66 | f2:cost=16.81 ang=+80 px=220 pred_r=4.28 | f3:cost=-0.03 ang=-10 px=4 pred_r=3.98 |
+[2026-10-18 18:17:38.905] [info] [SYNC][XUC] mode=0 yaw=55.63 deg pitch=-2.82 deg feeder_rpm=0.00 wheel0_rpm=680 wheel1_rpm=480 wheel_delta=200 projectile_speed=19.00 gate=0x00 switch=0 rc=0 sticks=0 imu=0 serial=0 control=0 yaw_armed=0 pitch_active=0
+[2026-10-18 18:17:38.936] [info] [RANGE] raw=4.084m model=3.989m filtered=4.016m model_used=1 raw_limited=0
+[2026-10-18 18:17:38.936] [info] [DRYRUN] measured_gimbal=(4.081,-0.079,-0.140) measured_world=(2.240,-3.415,0.061) tracked_world=(2.197,-3.782,0.058) target_gimbal_deg=(-1.11,-1.97) target_world_deg=(-56.75,0.85) gimbal_deg=(-55.63,-2.82) armor_y_px=657.0 pixel_error_deg=(1.57,2.56) ballistic=(range=4.016m holdover=0.163m comp=2.29deg residual=0.27deg) center_lead=0.00deg center_follow=false q_wxyz=(0.884184,0.011482,-0.021763,0.466491) cmd_deg=(-57.69,-2.53) packed_pitch_deg=-2.53 yaw_pi=(error=nandeg integral=0.00deg output=0.00deg) control=true shoot=false
+[2026-10-18 18:17:38.940] [info] [PERF] 总耗时=35.6ms (检测=30.4ms, 跟踪=0.6ms), FPS=28.1
+[2026-10-18 18:17:38.940] [info] 📊 [CAMERA FPS] 瞬时帧率=28.0fps, 平均帧率=33.4fps, 总帧数=700, 运行时间=21.0s
+[2026-10-18 18:17:39.109] [info] [YAWESKF] trusted=1 angle=+0.709 omega=-0.178 alpha=-3.859 raw_ekf_omega=+0.692 nis=0.77 accepted=61 rejected=0 whole_iekf_nis=0.53 armor_cv_trusted=1 armor_v=(+0.11,-1.19,+0.02) armor_cv_nis=0.45
+[2026-10-18 18:17:39.136] [info] [ASSOC] primary_face=3 matches=1 cost=0.245 detections=2 confidence=0.80
+[2026-10-18 18:17:39.136] [info] [ASSOC_D] det=1 face3 cost=0.245 align=7.0deg conf=0.80
+[2026-10-18 18:17:39.136] [info] [ASSOC_D] gate: total_det=2 cand=1 drop_name=1 drop_type=0 reject_cost=3 best_rejected=(det1,face0,cost=6.75) limit=0.80
+[2026-10-18 18:17:39.136] [info] [ASSOC_D] near-miss det1 face0 cost=6.75 = centre 2.04^2->4.16 + angle 3.64^2*0.20->2.65 + range 0.28^2*0.20->0.02 - conf 0.08 | pixels=111.8 scale=54.8 angle_deg=72.8
+[2026-10-18 18:17:39.136] [info] [ASSOC_D] ekf r=0.286 l=0.066 h=0.002 yaw=39.8deg omega=-0.373  <<< L/H NONZERO
+[2026-10-18 18:17:39.136] [info] [ASSOC_M] det1 range=4.41m yaw=-33.0deg | f0:cost=6.75 ang=-73 px=112 pred_r=4.73 | f1:cost=15.28 ang=-163 px=78 pred_r=5.03 | f2:cost=21.59 ang=+107 px=219 pred_r=4.66 | f3:cost=0.25 ang=+17 px=23 pred_r=4.33 |
+[2026-10-18 18:17:39.296] [info] [XUC][FIRE] cadence fallback available; fresh qualification required
+[2026-10-18 18:17:39.459] [info] [ASSOC] primary_face=2 matches=2 cost=0.167 detections=2 confidence=0.77
+[2026-10-18 18:17:39.459] [info] [ASSOC_D] det=0 face2 cost=0.167 align=29.0deg conf=0.77
+[2026-10-18 18:17:39.459] [info] [ASSOC_D] det=1 face3 cost=0.113 align=61.0deg conf=0.16
+[2026-10-18 18:17:39.459] [info] [ASSOC_D] gate: total_det=2 cand=2 drop_name=0 drop_type=0 reject_cost=6 best_rejected=(det0,face1,cost=8.43) limit=0.80
+[2026-10-18 18:17:39.459] [info] [ASSOC_D] near-miss det0 face1 cost=8.43 = centre 1.78^2->3.16 + angle 5.14^2*0.20->5.29 + range 0.52^2*0.20->0.05 - conf 0.08 | pixels=102.4 scale=57.6 angle_deg=102.8
+[2026-10-18 18:17:39.459] [info] [ASSOC_D]  selected: det0->face2 (0.167) det1->face3 (0.113)
+[2026-10-18 18:17:39.459] [info] [ASSOC_D] ekf r=0.292 l=0.040 h=0.003 yaw=95.4deg omega=+2.521
+[2026-10-18 18:17:39.459] [info] [ASSOC_M] det0 range=4.23m yaw=-71.8deg | f0:cost=19.91 ang=-167 px=140 pred_r=4.90 | f1:cost=8.43 ang=+103 px=102 pred_r=4.81 | f2:cost=0.17 ang=+13 px=23 pred_r=4.39 | f3:cost=20.53 ang=-77 px=242 pred_r=4.49 |
+[2026-10-18 18:17:39.459] [info] [ASSOC_M] det1 range=4.60m yaw=+4.2deg | f0:cost=10.00 ang=-91 px=118 pred_r=4.90 | f1:cost=70.40 ang=+179 px=361 pred_r=4.81 | f2:cost=36.97 ang=+89 px=281 pred_r=4.39 | f3:cost=0.11 ang=-1 px=17 pred_r=4.49 |
+[2026-10-18 18:17:39.549] [info] [DRYRUN] measured_gimbal=(4.111,0.004,-0.142) measured_world=(2.374,-3.359,0.061) tracked_world=(2.645,-3.916,0.062) target_gimbal_deg=(0.05,-1.97) target_world_deg=(-54.75,0.85) gimbal_deg=(-54.80,-2.82) armor_y_px=657.0 pixel_error_deg=(0.33,2.56) ballistic=(range=4.281m holdover=0.187m comp=2.47deg residual=0.09deg) center_lead=0.00deg center_follow=false q_wxyz=(0.887554,0.011332,-0.021863,0.460045) cmd_deg=(-53.52,-2.82) packed_pitch_deg=-2.82 yaw_pi=(error=nandeg integral=0.00deg output=0.00deg) control=true shoot=false
+[2026-10-18 18:17:39.741] [info] [ASSOC] primary_face=2 matches=1 cost=-0.018 detections=1 confidence=0.83
+[2026-10-18 18:17:39.741] [info] [ASSOC_D] det=0 face2 cost=-0.018 align=14.6deg conf=0.83
+[2026-10-18 18:17:39.741] [info] [ASSOC_D] gate: total_det=1 cand=1 drop_name=0 drop_type=0 reject_cost=3 best_rejected=(det0,face3,cost=11.28) limit=0.80
+[2026-10-18 18:17:39.741] [info] [ASSOC_D] near-miss det0 face3 cost=11.28 = centre 2.57^2->6.63 + angle 4.86^2*0.20->4.73 + range 0.27^2*0.20->0.01 - conf 0.08 | pixels=159.8 scale=62.1 angle_deg=97.2
+[2026-10-18 18:17:39.741] [info] [ASSOC_D] ekf r=0.294 l=0.036 h=0.004 yaw=139.4deg omega=+2.725
+[2026-10-18 18:17:39.741] [info] [ASSOC_M] det0 range=4.06m yaw=-47.8deg | f0:cost=16.94 ang=+173 px=89 pred_r=4.53 | f1:cost=19.65 ang=+83 px=251 pred_r=4.18 | f2:cost=-0.02 ang=-7 px=12 pred_r=3.96 | f3:cost=11.28 ang=-97 px=160 pred_r=4.34 |
+[2026-10-18 18:17:39.989] [info] [MODEL] switched to vehicle ekf_omega=+0.954rad_s
+[2026-10-18 18:17:39.989] [info] [XUC][GYRO] center_follow=true tracker=tracking omega=+0.954rad_s radius=0.295m
+[2026-10-18 18:17:40.065] [info] [ASSOC] primary_face=2 matches=1 cost=-0.067 detections=2 confidence=0.85
+[2026-10-18 18:17:40.065] [info] [ASSOC_D] det=0 face1 cost=0.172 align=62.3deg conf=0.56
+[2026-10-18 18:17:40.065] [info] [ASSOC_D] det=1 face2 cost=-0.067 align=27.7deg conf=0.85
+[2026-10-18 18:17:40.065] [info] [ASSOC_D] gate: total_det=2 cand=2 drop_name=0 drop_type=0 reject_cost=6 best_rejected=(det1,face3,cost=5.35) limit=0.80
+[2026-10-18 18:17:40.065] [info] [ASSOC_D] near-miss det1 face3 cost=5.35 = centre 1.33^2->1.76 + angle 4.27^2*0.20->3.65 + range 0.40^2*0.20->0.03 - conf 0.09 | pixels=75.0 scale=56.6 angle_deg=85.4
+[2026-10-18 18:17:40.065] [info] [ASSOC_D]  selected: det0->face1 (0.172) det1->face2 (-0.067)
+[2026-10-18 18:17:40.065] [info] [ASSOC_D] ekf r=0.295 l=0.034 h=0.004 yaw=151.6deg omega=+0.775
+[2026-10-18 18:17:40.065] [info] [ASSOC_M] det0 range=4.65m yaw=-101.8deg | f0:cost=9.38 ang=+107 px=91 pred_r=4.74 | f1:cost=0.17 ang=+17 px=13 pred_r=4.33 | f2:cost=34.30 ang=-73 px=263 pred_r=4.22 | f3:cost=67.12 ang=-163 px=343 pred_r=4.64 |
+[2026-10-18 18:17:40.065] [info] [ASSOC_M] det1 range=4.20m yaw=-23.8deg | f0:cost=25.17 ang=-175 px=177 pred_r=4.74 | f1:cost=28.64 ang=+95 px=279 pred_r=4.33 | f2:cost=-0.07 ang=+5 px=5 pred_r=4.22 | f3:cost=5.35 ang=-85 px=75 pred_r=4.64 |
+[2026-10-18 18:17:40.155] [info] [DRYRUN] measured_gimbal=(4.318,-0.279,-0.143) measured_world=(2.263,-3.690,0.069) tracked_world=(2.809,-3.872,0.069) target_gimbal_deg=(-3.69,-1.90) target_world_deg=(-58.48,0.92) gimbal_deg=(-54.79,-2.82) armor_y_px=653.2 pixel_error_deg=(4.22,2.48) ballistic=(range=4.240m holdover=0.183m comp=2.44deg residual=0.04deg) center_lead=0.00deg center_follow=true q_wxyz=(0.887581,0.011330,-0.021861,0.459994) cmd_deg=(-56.60,-2.72) packed_pitch_deg=-2.72 yaw_pi=(error=nandeg integral=0.00deg output=0.00deg) control=true shoot=false
+[2026-10-18 18:17:40.238] [info] [ROS2Visualizer] Spin thread stopped
+[2026-10-18 18:17:40.249] [info] [ROS2Visualizer] Shutdown complete
+[2026-10-18 18:17:40.253] [info] [ROS2] Shutdown complete
+[2026-10-18 18:17:40.280] [info] HikRobot's capture thread stopped.
+[2026-10-18 18:17:40.289] [info] HikRobot's daemon thread stopped.
+[2026-10-18 18:17:40.289] [info] HikRobot destructed.

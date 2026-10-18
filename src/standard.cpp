@@ -3,8 +3,10 @@
 #include <chrono>
 #include <cmath>
 #include <cstdlib>  // for setenv
+#include <deque>
 #include <iterator>
 #include <thread>
+#include <utility>
 #include <vector>
 #include <nlohmann/json.hpp>
 #include <opencv2/opencv.hpp>
@@ -428,6 +430,33 @@ int main(int argc, char * argv[])
     integration_yaml["xuc_gyro_fire_stable_ms"]
       ? std::max(0.0, integration_yaml["xuc_gyro_fire_stable_ms"].as<double>()) / 1000.0
       : 0.03;
+  // 【弹着相位门】center_follow 下炮口指向旋转中心，弹丸沿中心线飞出，命中只
+  // 取决于"弹到瞬间哪块装甲板压在视线上"。这里不碰 YawESKF（它的角速度在换面
+  // 节律上有 0.5~0.9 rad/s 摆动，折到 0.37 s 预测时域 = ±13~19°），改用实测
+  // 体相位 x[6] + 最近 2.5 s 的角度差分外推；台架是匀速，窗口平均可压到
+  // 0.05~0.1 rad/s（≈2~3°）。
+  const double xuc_fire_phase_window_rad =
+    (integration_yaml["xuc_fire_phase_window_deg"]
+       ? std::clamp(integration_yaml["xuc_fire_phase_window_deg"].as<double>(), 0.0, 40.0)
+       : 10.0) * M_PI / 180.0;
+  const double xuc_fire_phase_rate_window_s =
+    (integration_yaml["xuc_fire_phase_rate_window_ms"]
+       ? std::clamp(
+           integration_yaml["xuc_fire_phase_rate_window_ms"].as<double>(), 500.0, 6000.0)
+       : 2500.0) / 1000.0;
+  // 与 Aimer 一致的弹着时刻 = 帧龄 + 发弹延时 + 飞行时间
+  const double xuc_phase_high_speed_delay_s =
+    integration_yaml["high_speed_delay_time"]
+      ? std::max(0.0, integration_yaml["high_speed_delay_time"].as<double>())
+      : 0.1;
+  const double xuc_phase_low_speed_delay_s =
+    integration_yaml["low_speed_delay_time"]
+      ? std::max(0.0, integration_yaml["low_speed_delay_time"].as<double>())
+      : 0.1;
+  const double xuc_phase_decision_speed_rad_s =
+    integration_yaml["decision_speed"]
+      ? std::max(0.0, integration_yaml["decision_speed"].as<double>())
+      : 0.8;
   // A stationary target is still qualified by the proven image-space gate.
   // In gyro mode, however, the visible plate is moving while the gimbal follows
   // the vehicle centre. Qualify the armor selected by Aimer at projectile impact
@@ -894,6 +923,10 @@ int main(int argc, char * argv[])
   bool xuc_feeder_active = false;
   uint64_t xuc_feeder_transition_sequence = 0;
   bool xuc_gyro_cadence_hold_logged = false;
+  // 体相位历史（时间[s], 体相位[rad]）与窗口平均角速度，供弹着相位门使用。
+  // 只依赖实测体相位，与 YawESKF 的瞬时 ω 解耦。
+  std::deque<std::pair<double, double>> body_phase_history;
+  double body_phase_rate_window = 0.0;
   long xuc_fire_inhibit_count = 0;   // 被拨弹门控拦下的累计次数（监控窗口用）
   // 【诊断】持续 shoot 模式的计数与结束标记；仅用于 SPV_SHOOT_HOLD_MS 诊断，验收后删除
   long xuc_shoot_hold_frames = 0;
@@ -1251,6 +1284,32 @@ int main(int argc, char * argv[])
           tracked_target.armor_motion_nis(tracked_target.last_id));
       }
     }
+    // ---- 弹着相位门的窗口平均角速度（与 YawESKF 的瞬时 ω 解耦）----
+    if (!targets.empty() && std::isfinite(gyro_body_phase_rad)) {
+      const double now_phase_s =
+        std::chrono::duration<double>(t.time_since_epoch()).count();
+      body_phase_history.emplace_back(now_phase_s, gyro_body_phase_rad);
+      while (!body_phase_history.empty() &&
+             now_phase_s - body_phase_history.front().first >
+               xuc_fire_phase_rate_window_s) {
+        body_phase_history.pop_front();
+      }
+      const double phase_span_s = now_phase_s - body_phase_history.front().first;
+      if (body_phase_history.size() >= 3 && phase_span_s > 0.4) {
+        double unwrapped = 0.0;
+        for (std::size_t i = 1; i < body_phase_history.size(); ++i) {
+          unwrapped += std::remainder(
+            body_phase_history[i].second - body_phase_history[i - 1].second,
+            M_PI / 2.0);
+        }
+        body_phase_rate_window = unwrapped / phase_span_s;
+      } else {
+        body_phase_rate_window = gyro_omega_rad_s;   // 刚捕获目标时回退
+      }
+    } else {
+      body_phase_history.clear();
+      body_phase_rate_window = 0.0;
+    }
     const double model_now_s = std::chrono::duration<double>(
       t.time_since_epoch()).count();
     const bool prior_phase_rate_valid = gyro_phase_scheduler.period_valid();
@@ -1266,6 +1325,8 @@ int main(int argc, char * argv[])
       gyro_face_selector.reset();
       event_last_fired_cycle = -1;
       xuc_one_face_armed = true;
+      body_phase_history.clear();
+      body_phase_rate_window = 0.0;
       tools::logger()->warn(
         "[MODEL] phase reset mode={} ekf_omega={:+.3f} pll_omega={:+.3f} "
         "rate_delta={:.3f}",
@@ -1840,6 +1901,24 @@ int main(int argc, char * argv[])
           face_valid = std::isfinite(face_error_rad);
         }
       }
+      // 弹着相位：实测体相位外推到弹丸到达时刻，取最近装甲板相对中心方位的
+      // 夹角（fold 到 90° 一个面，0..45°）。center_follow 下这就是命中判据。
+      double impact_phase_err_rad = INFINITY;
+      if (!targets.empty() && std::isfinite(gyro_body_phase_rad) &&
+          std::isfinite(gyro_center_yaw) && std::isfinite(robust_target_range_m) &&
+          robust_target_range_m > 0.1) {
+        const double processing_age_s = std::max(0.0, std::chrono::duration<double>(
+          std::chrono::steady_clock::now() - t).count());
+        const double shot_delay_s =
+          std::abs(gyro_omega_rad_s) > xuc_phase_decision_speed_rad_s
+            ? xuc_phase_high_speed_delay_s : xuc_phase_low_speed_delay_s;
+        const double flight_s = robust_target_range_m / xuc_projectile_speed_mps;
+        const double phase_at_impact =
+          gyro_body_phase_rad + body_phase_rate_window *
+            (processing_age_s + shot_delay_s + flight_s);
+        impact_phase_err_rad = std::abs(std::remainder(
+          phase_at_impact - gyro_center_yaw, M_PI / 2.0));
+      }
       const bool gyro_predicted_fire_active =
         vehicle_model_fresh && gyro_model_fresh &&
         xuc_gyro_predicted_fire_enabled;
@@ -2116,6 +2195,15 @@ int main(int argc, char * argv[])
         }
       }
       if (!gyro_center_follow_active) xuc_one_face_armed = true;
+      // 【相位门】只在"弹到瞬间最近装甲板压在视线上"才允许开火。仅 center_follow
+      // （炮口指中心）且在旋转时生效；静止靶走直接测角分支，不适用。
+      const bool impact_phase_gate_active =
+        xuc_fire_phase_window_rad > 0.0 && gyro_center_follow_active &&
+        std::abs(gyro_omega_rad_s) >= 0.30;
+      const bool impact_phase_gate_open =
+        !impact_phase_gate_active ||
+        (std::isfinite(impact_phase_err_rad) &&
+         impact_phase_err_rad <= xuc_fire_phase_window_rad);
       const bool one_face_gate_open = !one_face_policy_active ||
         (gyro_predicted_fire_active
            ? (gyro_event_schedule_valid
@@ -2153,6 +2241,7 @@ int main(int argc, char * argv[])
         auto_mode_active &&
         convergence_gate_open && one_face_gate_open && motion_transition_gate_open &&
         feedback_cadence_gate_open &&
+        impact_phase_gate_open &&
         direct_yaw_measurement_fresh && direct_pitch_measurement_fresh &&
         yaw_gate_open &&
         std::abs(direct_pitch_pixel_error_rad) <= xuc_fire_pitch_tolerance_rad;
@@ -2163,7 +2252,8 @@ int main(int argc, char * argv[])
         tools::logger()->info(
           "[B2DIAG] auto={} control={} conv={} oneface_gate={} armed={} motion={} "
           "cadence={} dyaw_fresh={} dpitch_fresh={} yawgate={} event={} safe={} "
-          "face={} face_ok={} face_align_deg={:.2f} phase_unc_deg={:.2f} "
+          "face={} face_ok={} phasegate={} phase_err_deg={:.2f} "
+          "phase_rate={:+.2f} face_align_deg={:.2f} phase_unc_deg={:.2f} "
           "gimbal_err_deg={:.2f} due_ms={:+.1f} window_deg={:.2f} "
           "worst_deg={:.2f} combined_deg={:.2f} "
           "yawerr_deg={:.2f} pitcherr_deg={:.2f}",
@@ -2177,6 +2267,8 @@ int main(int argc, char * argv[])
           yaw_gate_open ? 1 : 0, gyro_event_schedule_valid ? 1 : 0,
           gyro_event_interval_safe ? 1 : 0,
           gyro_event_face_id, gyro_event_face_valid ? 1 : 0,
+          impact_phase_gate_open ? 1 : 0, impact_phase_err_rad * 180.0 / M_PI,
+          body_phase_rate_window,
           gyro_event_face_alignment_rad * 180.0 / M_PI,
           gyro_event_phase_uncertainty_rad * 180.0 / M_PI,
           gyro_event_gimbal_tracking_error_rad * 180.0 / M_PI,
@@ -2249,7 +2341,9 @@ int main(int argc, char * argv[])
             "current_pixel_error_deg=({:.2f},{:.2f}) "
             "predicted_impact_yaw_error_deg={:.2f} gyro_predict={} "
             "face_error={:.2f}deg committed_face={} face_align={:.2f}deg "
-            "phase_unc={:.2f}deg gimbal_err={:.2f}deg omega={:+.3f}rad_s armed={}",
+            "phase_unc={:.2f}deg gimbal_err={:.2f}deg omega={:+.3f}rad_s armed={} "
+            "phase_win={:.0f}deg phasegate_on={} phase_err={:.2f}deg "
+            "phase_rate={:+.3f}",
             stable_time * 1000.0,
             xuc_fire_candidate_frames,
             direct_yaw_pixel_error_rad * 180.0 / M_PI,
@@ -2259,7 +2353,9 @@ int main(int argc, char * argv[])
             gyro_event_face_id, gyro_event_face_alignment_rad * 180.0 / M_PI,
             gyro_event_phase_uncertainty_rad * 180.0 / M_PI,
             gyro_event_gimbal_tracking_error_rad * 180.0 / M_PI,
-            gyro_omega_rad_s, xuc_one_face_armed);
+            gyro_omega_rad_s, xuc_one_face_armed,
+            xuc_fire_phase_window_rad * 180.0 / M_PI, impact_phase_gate_active,
+            impact_phase_err_rad * 180.0 / M_PI, body_phase_rate_window);
           xuc_fire_ready_logged = true;
           if (one_face_policy_active) {
             xuc_one_face_armed = false;
