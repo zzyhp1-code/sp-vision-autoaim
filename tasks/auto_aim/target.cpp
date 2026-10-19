@@ -527,6 +527,20 @@ std::vector<Eigen::Vector4d> Target::armor_xyza_list(bool prefer_direct_motion) 
   return _armor_xyza_list;
 }
 
+// 不经 YawESKF 覆盖的整车状态版本：x[6] 直接用主 EKF 的 yaw。
+std::vector<Eigen::Vector4d> Target::whole_ekf_armor_xyza_list() const
+{
+  std::vector<Eigen::Vector4d> _armor_xyza_list;
+  const Eigen::VectorXd & state = ekf_.x;
+  if (state.size() < 9) return _armor_xyza_list;
+  for (int i = 0; i < armor_num_; i++) {
+    auto angle = tools::limit_rad(state[6] + i * 2 * CV_PI / armor_num_);
+    Eigen::Vector3d xyz = h_armor_xyz(state, i);
+    _armor_xyza_list.push_back({xyz[0], xyz[1], xyz[2], angle});
+  }
+  return _armor_xyza_list;
+}
+
 int Target::armor_num() const { return armor_num_; }
 
 bool Target::diverged() const

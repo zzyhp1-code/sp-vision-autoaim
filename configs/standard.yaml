@@ -139,7 +139,7 @@ leaving_angle: 20
 decision_speed: 0.8
 # Field feedback explicitly selected an 85 ms command-to-impact prediction.
 # Keep high- and low-speed prediction on the same physical calibration.
-high_speed_delay_time: 0.1
+high_speed_delay_time: 0.1   # 2026-10-19 对照复测 A2：恢复 100 ms 基线；与 B 轮 150 ms 对比；仅用于验证，不作最终标定
 low_speed_delay_time: 0.1
 
 actuation_delay_ms: 0
@@ -270,7 +270,7 @@ xuc_gyro_fire_stable_ms: 20.0
 # 折到 0.37 s 预测时域是 ±13~19°，会把门指错）。
 # 窗口角：允许的弹着相位偏差。10° 对应板半张角 13~15° 留 3~5° 余量。
 # 0 = 关闭相位门（回到“节奏一到就开火”）。
-xuc_fire_phase_window_deg: 10.0
+xuc_fire_phase_window_deg: 0.0
 # 平均角速度的窗口长度；台架匀速，2.5 s 足够把 ω 抖动平均掉。
 xuc_fire_phase_rate_window_ms: 2500.0
 # Fixed targets keep xuc_fire_yaw_tolerance_deg and the 350 ms stable gate.
@@ -300,13 +300,13 @@ xuc_gyro_post_feed_recovery_ms: 550.0
 # 拉长到 1.5 s 后每发清晰可辨（首发不受影响，since_last_shot 初值为无穷大）。
 # 2026-10-18：配合弹着相位门改为 250 ms（拨弹起转→停转实测中位 111~120 ms，
 # 250 ms 留有余量；每发还要多等 min_consecutive_frames 2 帧 ≈ 40~80 ms）。
-xuc_fire_cadence_fallback_ms: 250.0
+xuc_fire_cadence_fallback_ms: 200.0
 # 开火脉冲保持时长（毫秒）。0 = 关闭（单帧脉冲，原行为）。
 # >0 时，开火上升沿后把 shoot 维持该时长，使下位机 AUTO 档（速度模式）拨弹轮
 # 获得确定性转动时间。实测单帧约 10ms 不足，一颗弹常需 3~4 次脉冲才能推入入口。
 # 拨弹完成约需 40~180ms，建议从 120~150ms 起步，按实际出弹情况微调。
 # 2026-10-15 现场调参中（130ms）。
-xuc_shoot_hold_ms: 30.0
+xuc_shoot_hold_ms: 60.0
 # At ~5 rad/s and 60 FPS the same armor advances ~5 deg/frame; a four-armor
 # identity switch is ~90 deg. Restart the two-frame window on a large phase jump.
 xuc_gyro_candidate_max_phase_step_deg: 20.0
@@ -342,7 +342,7 @@ xuc_direct_pitch_filter_tau_ms: 60.0     # retain post-shot noise damping withou
 xuc_direct_pitch_hold_ms: 180.0          # 已保存双轴验收值：短丢帧保持
 xuc_direct_pitch_max_rate_dps: 45.0      # midpoint between the stable-but-slow 25 and previously validated 80 deg/s
 xuc_direct_pitch_error_gain: 1.35        # recover steady-state authority; below the previously validated 1.65 gain
-xuc_projectile_speed_mps: 19           # 2026-10-16 实测（测速文件）：摩擦轮降速后弹速 17.3 m/s
+xuc_projectile_speed_mps: 17.3        # 2026-10-16 实测（测速文件）：摩擦轮降速后弹速 17.3 m/s；2026-10-18复测：19m/s为0/20，17.3m/s为5/20；因果待更多样本确认
 xuc_ballistic_reference_projectile_speed_mps: 10.0  # 0.91m/17cm实弹基准采集于2500rpm，禁止随当前转速重算
 xuc_ballistic_pitch_enabled: true
 xuc_camera_forward_of_muzzle_m: 0.06     # 实测：相机中心在炮口前方 6 cm

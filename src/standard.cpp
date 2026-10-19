@@ -43,6 +43,11 @@
 
 using namespace std::chrono;
 
+// 开火判据（2026-10-19 借鉴 Fujian_AutoAim 26.10.18 的 RotationFireWindow）：
+// 不用"误差小于某个窗"，而是用最近两帧的实测弹着偏航误差外推下一帧，
+// 在哪一帧误差到达谷底（下一步会变差）就那一帧开火。实现见下面 fire_candidate 之后的
+// 【误差拐点开火】一段；这里不再保留状态机结构体，选板连续性由 stable-window 负责。
+
 const std::string keys =
   "{help h usage ? |      | 输出命令行参数说明}"
   "{@config-path   | configs/standard.yaml | 位置参数，yaml配置文件路径 }";
@@ -923,6 +928,8 @@ int main(int argc, char * argv[])
   bool xuc_feeder_active = false;
   uint64_t xuc_feeder_transition_sequence = 0;
   bool xuc_gyro_cadence_hold_logged = false;
+  // 误差拐点判据用的上一帧弹着偏航误差（rad）；仅观测，不参与控制以外的东西。
+  double prev_pred_yaw_error_rad = NAN;
   // 体相位历史（时间[s], 体相位[rad]）与窗口平均角速度，供弹着相位门使用。
   // 只依赖实测体相位，与 YawESKF 的瞬时 ω 解耦。
   std::deque<std::pair<double, double>> body_phase_history;
@@ -1482,7 +1489,12 @@ int main(int argc, char * argv[])
         robust_range.used_model ? 1 : 0, robust_range.raw_limited ? 1 : 0);
     }
 
-    auto command = aimer.aim(targets, t, cboard.bullet_speed, true);  // to_now=true，生成当前时刻命令
+    // 小陀螺时用主 EKF 的整车几何选板/预测（AimGeometry::whole_ekf），
+    // 静止/低速仍走原来的 ekf_x() 路径；trace 只用于诊断。
+    auto_aim::AimPredictionTrace native_fire_prediction;
+    auto command = aimer.aim(
+      targets, t, cboard.bullet_speed, true, &native_fire_prediction,
+      auto_aim::AimGeometry::whole_ekf);  // to_now=true，生成当前时刻命令
     const bool native_prediction_valid =
       command.control && !targets.empty() && std::isfinite(command.yaw);
     const bool native_prediction_trusted =
@@ -1524,6 +1536,9 @@ int main(int argc, char * argv[])
     // Kept as a frame-local diagnostic so the field log can prove whether the
     // lead was commanded and whether it sat at its envelope.
     double center_command_lead_rad = 0.0;
+    // Per-shot diagnostics only; these values never participate in control.
+    double shot_diag_signed_phase_rad = NAN;
+    double shot_diag_phase_horizon_s = NAN;
     // A newly constructed tracker returns provisional targets before its
     // normal convergence window.  Keep those detections visible, but never let
     // a one-frame pose regain actuator authority after a genuine track loss.
@@ -1918,6 +1933,9 @@ int main(int argc, char * argv[])
             (processing_age_s + shot_delay_s + flight_s);
         impact_phase_err_rad = std::abs(std::remainder(
           phase_at_impact - gyro_center_yaw, M_PI / 2.0));
+        shot_diag_signed_phase_rad = std::remainder(
+          phase_at_impact - gyro_center_yaw, M_PI / 2.0);
+        shot_diag_phase_horizon_s = processing_age_s + shot_delay_s + flight_s;
       }
       const bool gyro_predicted_fire_active =
         vehicle_model_fresh && gyro_model_fresh &&
@@ -2197,9 +2215,11 @@ int main(int argc, char * argv[])
       if (!gyro_center_follow_active) xuc_one_face_armed = true;
       // 【相位门】只在"弹到瞬间最近装甲板压在视线上"才允许开火。仅 center_follow
       // （炮口指中心）且在旋转时生效；静止靶走直接测角分支，不适用。
+      // 2026-10-18 靶车自转复测：稳定相位速率约 1.5 rad/s 时，瞬时 gyro_omega_rad_s
+      // 会短暂跌破 0.30 rad/s，造成相位门旁路；门控阈值与弹着相位预测统一使用窗口速率。
       const bool impact_phase_gate_active =
         xuc_fire_phase_window_rad > 0.0 && gyro_center_follow_active &&
-        std::abs(gyro_omega_rad_s) >= 0.30;
+        std::abs(body_phase_rate_window) >= 0.30;
       const bool impact_phase_gate_open =
         !impact_phase_gate_active ||
         (std::isfinite(impact_phase_err_rad) &&
@@ -2245,6 +2265,24 @@ int main(int argc, char * argv[])
         direct_yaw_measurement_fresh && direct_pitch_measurement_fresh &&
         yaw_gate_open &&
         std::abs(direct_pitch_pixel_error_rad) <= xuc_fire_pitch_tolerance_rad;
+      // 【误差拐点开火】(2026-10-19 借鉴 Fujian_AutoAim 26.10.18)
+      // 用最近两帧的实测弹着偏航误差外推下一帧：next = e + (e - e_prev)。
+      // 若当前误差不大于外推值（误差已到谷底、下一步会变差），或下一帧会超出容差，
+      // 本帧就是这一窗口里最好的开火时刻。不建模型、不需要准确的 ω。
+      const double pred_err_rad = gyro_predicted_impact_yaw_error_rad;
+      double next_pred_err_rad = NAN;
+      bool current_frame_is_better = false;
+      if (predictive_fire_active && std::isfinite(pred_err_rad) &&
+          std::isfinite(prev_pred_yaw_error_rad)) {
+        next_pred_err_rad = std::remainder(
+          pred_err_rad + std::remainder(pred_err_rad - prev_pred_yaw_error_rad, 2.0 * M_PI),
+          2.0 * M_PI);
+        current_frame_is_better =
+          std::abs(pred_err_rad) <= std::abs(next_pred_err_rad) ||
+          std::abs(next_pred_err_rad) > xuc_gyro_predicted_yaw_tolerance_rad;
+      }
+      prev_pred_yaw_error_rad =
+        (predictive_fire_active && std::isfinite(pred_err_rad)) ? pred_err_rad : NAN;
       // Fire-gate diagnostic for both medium-speed prediction and the high-speed
       // event clock; low-speed dead zones were previously invisible here.
       static int b2_diag_log = 0;
@@ -2323,7 +2361,8 @@ int main(int argc, char * argv[])
             ? 1
             : xuc_gyro_fire_min_consecutive_frames;
           command.shoot =
-            (xuc_fire_candidate_frames >= ev_need_frames) && !xuc_fire_ready_logged;
+            (xuc_fire_candidate_frames >= ev_need_frames) && !xuc_fire_ready_logged &&
+            current_frame_is_better;
         } else {
           const double required_stable_s = one_face_policy_active
             ? xuc_gyro_fire_stable_s
@@ -2343,7 +2382,8 @@ int main(int argc, char * argv[])
             "face_error={:.2f}deg committed_face={} face_align={:.2f}deg "
             "phase_unc={:.2f}deg gimbal_err={:.2f}deg omega={:+.3f}rad_s armed={} "
             "phase_win={:.0f}deg phasegate_on={} phase_err={:.2f}deg "
-            "phase_rate={:+.3f}",
+            "phase_rate={:+.3f} next_err={:+.2f}deg better={} "
+            "whole_ekf={} trace_face={}",
             stable_time * 1000.0,
             xuc_fire_candidate_frames,
             direct_yaw_pixel_error_rad * 180.0 / M_PI,
@@ -2355,7 +2395,9 @@ int main(int argc, char * argv[])
             gyro_event_gimbal_tracking_error_rad * 180.0 / M_PI,
             gyro_omega_rad_s, xuc_one_face_armed,
             xuc_fire_phase_window_rad * 180.0 / M_PI, impact_phase_gate_active,
-            impact_phase_err_rad * 180.0 / M_PI, body_phase_rate_window);
+            impact_phase_err_rad * 180.0 / M_PI, body_phase_rate_window,
+            next_pred_err_rad * 180.0 / M_PI, current_frame_is_better,
+            native_fire_prediction.whole_ekf_geometry, native_fire_prediction.face_id);
           xuc_fire_ready_logged = true;
           if (one_face_policy_active) {
             xuc_one_face_armed = false;
@@ -2599,8 +2641,10 @@ int main(int argc, char * argv[])
     // rising edge closes the command-to-feeder timing measurement; it is not
     // treated as projectile muzzle time.
     bool shot_rising_edge_this_frame = false;
+    std::chrono::steady_clock::time_point shot_diag_issue_time{};
     if (xuc.enabled() && command.shoot) {
       const auto issue_time = std::chrono::steady_clock::now();
+      shot_diag_issue_time = issue_time;
       const uint64_t shot_id = xuc_next_shot_id++;
       shot_rising_edge_this_frame = true;
       if (xuc_pending_shot) {
@@ -2624,7 +2668,12 @@ int main(int argc, char * argv[])
         "[SHOT] id={} issue mode={} gyro={} event={} cycle={} "
         "processing_age_ms={:.1f} due_error_ms={:+.2f} "
         "period_ms={:.1f} window_deg={:.2f} worst_deg={:.2f} combined_deg={:.2f} "
-        "face={} face_align_deg={:.2f} phase_unc_deg={:.2f} gimbal_err_deg={:.2f}",
+        "face={} face_align_deg={:.2f} phase_unc_deg={:.2f} gimbal_err_deg={:.2f} "
+        "phase_signed_deg={:+.2f} phase_rate_rad_s={:+.3f} phase_horizon_ms={:.1f} "
+        "body_phase_deg={:+.2f} center_yaw_deg={:+.2f} "
+        "cmd_yaw_deg={:+.2f} gimbal_yaw_deg={:+.2f} "
+        "cmd_pitch_deg={:+.2f} gimbal_pitch_deg={:+.2f} "
+        "range_m={:.3f} projectile_speed_mps={:.2f}",
         shot_id, static_cast<int>(xuc.mode()), gyro_model_fresh ? 1 : 0,
         gyro_event_schedule_valid ? 1 : 0, gyro_event_hit_cycle,
         processing_age_ms, gyro_event_send_lateness_ms,
@@ -2635,7 +2684,13 @@ int main(int argc, char * argv[])
         gyro_event_face_id,
         gyro_event_face_alignment_rad * 180.0 / M_PI,
         gyro_event_phase_uncertainty_rad * 180.0 / M_PI,
-        gyro_event_gimbal_tracking_error_rad * 180.0 / M_PI);
+        gyro_event_gimbal_tracking_error_rad * 180.0 / M_PI,
+        shot_diag_signed_phase_rad * 180.0 / M_PI, body_phase_rate_window,
+        shot_diag_phase_horizon_s * 1000.0,
+        gyro_body_phase_rad * 180.0 / M_PI, gyro_center_yaw * 180.0 / M_PI,
+        command.yaw * 180.0 / M_PI, ypr[0] * 180.0 / M_PI,
+        command.pitch * 180.0 / M_PI, ypr[1] * 180.0 / M_PI,
+        robust_target_range_m, xuc_projectile_speed_mps);
     }
 
     // 发送命令到 PlotJuggler（显示实际发送的值）
@@ -2760,9 +2815,22 @@ int main(int argc, char * argv[])
       // 否则 cadence 门控会被无限推迟（实测会退化成死锁）。
       if (shot_rising_edge_this_frame) {
         xuc_last_shot_issue_time = std::chrono::steady_clock::now();
+        // This is a host serial-write-call timestamp, not physical muzzle time.
+        const int64_t tx_call_ns = xuc.last_shoot_tx_ns();
+        const int64_t issue_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+          shot_diag_issue_time.time_since_epoch()).count();
+        const int64_t image_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+          t.time_since_epoch()).count();
+        const bool tx_call_matches = tx_call_ns >= issue_ns;
+        tools::logger()->info(
+          "[SHOTTX] id={} tx_call_matches={} issue_to_tx_call_ms={:.3f} "
+          "image_to_tx_call_ms={:.3f}",
+          xuc_pending_shot_id, tx_call_matches ? 1 : 0,
+          tx_call_matches ? (tx_call_ns - issue_ns) / 1e6 : NAN,
+          tx_call_matches ? (tx_call_ns - image_ns) / 1e6 : NAN);
       }
-      // 定时回退模式下同样不记录 pending：该模式不依赖拨弹反馈，
-      // 若记录 pending 会因遥测为 0 而超时循环，反而阻塞节奏。诊断模式同理。
+      // pending is already registered before send above. Feedback cadence
+      // additionally replaces its issue-time origin with the write-call time.
       if (shot_rising_edge_this_frame && !shoot_hold_active &&
           xuc_fire_cadence_fallback_s <= 0.0) {
         const int64_t tx_ns = xuc.last_shoot_tx_ns();

@@ -3,7 +3,10 @@
 
 #include <Eigen/Dense>
 #include <chrono>
+#include <cstdint>
+#include <limits>
 #include <list>
+#include <optional>
 
 #include "io/cboard.hpp"
 #include "io/command.hpp"
@@ -18,6 +21,26 @@ struct AimPoint
   Eigen::Vector4d xyza;
 };
 
+// 选板/预测用哪套几何：
+//   existing  —— 沿用 ekf_x()（x[6]/x[7] 被 YawESKF 覆盖），静止/低速/前哨站走这条；
+//   whole_ekf —— 直接用主 EKF 的 11 维状态（小陀螺时用）。YawESKF 的角速度在换面
+//                节律上有 0.5~0.9 rad/s 摆动，用它外推弹着时刻会把板选到 45° 以外；
+//                主 EKF 的整车 yaw 更稳，代价是不做单板精修。
+enum class AimGeometry { existing, whole_ekf };
+
+// 只做观测，不参与控制。
+struct AimPredictionTrace
+{
+  bool valid = false, converged = false;
+  bool whole_ekf_geometry = false;
+  int face_id = -1, iterations = 0;
+  int64_t base_prediction_ns = 0, prediction_ns = 0;
+  double delay_s = std::numeric_limits<double>::quiet_NaN();
+  double speed_mps = std::numeric_limits<double>::quiet_NaN();
+  double flight_time_used_s = std::numeric_limits<double>::quiet_NaN();
+  double flight_time_s = std::numeric_limits<double>::quiet_NaN();
+};
+
 class Aimer
 {
 public:
@@ -25,11 +48,13 @@ public:
   explicit Aimer(const std::string & config_path);
   io::Command aim(
     std::list<Target> targets, std::chrono::steady_clock::time_point timestamp, double bullet_speed,
-    bool to_now = true);
+    bool to_now = true, AimPredictionTrace * trace = nullptr,
+    AimGeometry geometry = AimGeometry::existing);
 
   io::Command aim(
     std::list<Target> targets, std::chrono::steady_clock::time_point timestamp, double bullet_speed,
-    io::ShootMode shoot_mode, bool to_now = true);
+    io::ShootMode shoot_mode, bool to_now = true, AimPredictionTrace * trace = nullptr,
+    AimGeometry geometry = AimGeometry::existing);
 
   // Applies the same bounded runtime correction to both speed branches.  Their
   // calibrated base values remain unchanged and are restored with zero.
@@ -47,7 +72,8 @@ private:
   double delay_adjustment_time_ = 0.0;
   double decision_speed_;
 
-  AimPoint choose_aim_point(const Target & target);
+  AimPoint choose_aim_point(
+    const Target & target, bool whole_ekf_geometry, int * face_id = nullptr);
 };
 
 }  // namespace auto_aim

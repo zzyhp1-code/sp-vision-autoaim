@@ -73,6 +73,10 @@ public:
   Eigen::Vector3d armor_motion_velocity(int id) const;
   double armor_motion_nis(int id) const;
   std::vector<Eigen::Vector4d> armor_xyza_list(bool prefer_direct_motion = false) const;
+  // 直接用主 EKF 的 11 维状态生成四块板（x[6] 是整车 yaw，不被 YawESKF 覆盖）。
+  // 小陀螺时 Aimer 走这条路径：YawESKF 的角速度在换面节律上有 0.5~0.9 rad/s 的摆动，
+  // 用它外推弹着时刻会把选中的板选到 45° 以外（2026-10-19 借鉴 Fujian_AutoAim）。
+  std::vector<Eigen::Vector4d> whole_ekf_armor_xyza_list() const;
   int armor_num() const;
 
   bool diverged() const;

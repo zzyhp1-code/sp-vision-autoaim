@@ -93,7 +93,14 @@ public:
       return;
     }
 
-    const double dt = dt_s;
+    // 子步积分（2026-10-19 借鉴 Fujian_AutoAim 26.10.18）：
+    // max_dt_s 的含义从"单次预测上限"改成"最大积分步长"，整个 dt 用 N 个子步走完。
+    // 这样多项式项不会在大 dt 下发散，同时不改变调用方看到的总时域。
+    const double max_step_s = std::max(1e-3, config_.max_dt_s);
+    constexpr int max_steps = 200;
+    int steps = static_cast<int>(std::ceil(dt_s / max_step_s));
+    steps = std::clamp(steps, 1, max_steps);
+    const double dt = dt_s / steps;
     const double dt2 = dt * dt;
     const double dt3 = dt2 * dt;
     const double dt4 = dt3 * dt;
@@ -103,14 +110,15 @@ public:
     F << 1.0, dt, 0.5 * dt2,
          0.0, 1.0, dt,
          0.0, 0.0, 1.0;
-    x_ = F * x_;
-
     const double q = std::max(0.0, config_.angular_jerk_variance);
     Eigen::Matrix3d Q;
     Q << dt5 / 20.0, dt4 / 8.0, dt3 / 6.0,
          dt4 / 8.0, dt3 / 3.0, dt2 / 2.0,
          dt3 / 6.0, dt2 / 2.0, dt;
-    P_ = F * P_ * F.transpose() + q * Q;
+    for (int i = 0; i < steps; ++i) {
+      x_ = F * x_;
+      P_ = F * P_ * F.transpose() + q * Q;
+    }
 
     stabilize_covariance();
   }
