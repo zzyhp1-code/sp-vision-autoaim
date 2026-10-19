@@ -1928,8 +1928,16 @@ int main(int argc, char * argv[])
           std::abs(gyro_omega_rad_s) > xuc_phase_decision_speed_rad_s
             ? xuc_phase_high_speed_delay_s : xuc_phase_low_speed_delay_s;
         const double flight_s = robust_target_range_m / xuc_projectile_speed_mps;
+        // 相位源必须与 AimGeometry 同源：whole_ekf 时选板/预测用的是主 EKF 的
+        // x[6]，而 gyro_body_phase_rad 来自被 YawESKF 覆盖的 ekf_x()[6]，两者实测
+        // 差约 30°，拿它算弹着相位会让弹着相位诊断和瞄准链路对不上。
+        const auto & whole_phase_state = targets.front().ekf().x;
+        const double body_phase_used =
+          (native_fire_prediction.whole_ekf_geometry && whole_phase_state.size() == 11)
+            ? whole_phase_state[6]
+            : gyro_body_phase_rad;
         const double phase_at_impact =
-          gyro_body_phase_rad + body_phase_rate_window *
+          body_phase_used + body_phase_rate_window *
             (processing_age_s + shot_delay_s + flight_s);
         impact_phase_err_rad = std::abs(std::remainder(
           phase_at_impact - gyro_center_yaw, M_PI / 2.0));
