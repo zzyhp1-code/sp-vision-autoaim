@@ -131,7 +131,7 @@ outpost_max_temp_lost_count: 75
 
 #####-----Aimer（瞄准器）参数-----#####
 yaw_offset: 0.0  # 动态视觉跟随以测量中心为零；避免静态偏置被计入预测超前量
-pitch_offset: 2.0
+pitch_offset: 6.0          # 2026-10-20 现场值（小电脑 standard.yaml 同步）
 
 comming_angle: 60
 leaving_angle: 20
@@ -139,8 +139,16 @@ leaving_angle: 20
 decision_speed: 0.8
 # Field feedback explicitly selected an 85 ms command-to-impact prediction.
 # Keep high- and low-speed prediction on the same physical calibration.
-high_speed_delay_time: 0.195   # 2026-10-19 对照复测 A2：恢复 100 ms 基线；与 B 轮 150 ms 对比；仅用于验证，不作最终标定
-low_speed_delay_time: 0.195
+# 2026-10-20 实测（当天 154 次拨弹）：开火命令→拨弹起转 23.5 ms（14.4~37），
+# 起转→停转 74.4 ms（39.8~164.2），即命令→出弹 ≈ 98 ms。
+# 此处同时决定「瞄准点超前量」与「弹着相位门的推算时域」，必须用实测值：
+# 取 0.205 会按多算的 (0.205-0.098)=107 ms 提前量开火，ω≈1.57 rad/s 时
+# 相位超前 ≈9.6°，r=0.27 m 上就是 ≈45 mm——正好是 135 mm 板上前缘的位置。
+# 步进：10 ms ≈ 0.9° ≈ 4 mm（板上）。若跑到后缘就往上加 0.02~0.03；
+# 若仍在前缘就往下减 0.02。若确认实弹初速是 17.3 m/s（配置当前按 19.8 算
+# 飞行 0.209 s），飞行时间还差 0.03 s，量等效延迟可取到 0.13。
+high_speed_delay_time: 0.235
+low_speed_delay_time: 0.235
 
 actuation_delay_ms: 0
 
@@ -185,8 +193,8 @@ trigger_activation: 0
 # 1600x1080 centered ROI, OffsetX=736, OffsetY=480; full sensor: 3072x2048
 # Crop translation only: cx -= 736, cy -= 480; fx/fy and distortion unchanged.
 # Full-frame principal point (1465.505908, 1053.887837) minus the crop origin.
-camera_matrix: [2598.5969903289788, 0, 729.5059081485417, 0, 2617.5444216804849, 573.8878367134425, 0, 0, 1]
-distort_coeffs: [-0.016769610101706224, 0.095334726640603468, 0.0030276490387946948, 0.0015186953278450821, 0]
+camera_matrix: [2613.6238346662558, 0, 831.13793261490321, 0, 2623.9361517252046, 601.15236567678858, 0, 0, 1]
+distort_coeffs: [-0.14672657883564594, 0.63738545399917312, -0.00079995678728670956, -0.0020413307914658638, 0]
 
 R_gimbal2imubody: [-1, 0, 0, 0, 1, 0, 0, 0, -1]
 
@@ -270,7 +278,16 @@ xuc_gyro_fire_stable_ms: 20.0
 # 折到 0.37 s 预测时域是 ±13~19°，会把门指错）。
 # 窗口角：允许的弹着相位偏差。10° 对应板半张角 13~15° 留 3~5° 余量。
 # 0 = 关闭相位门（回到“节奏一到就开火”）。
-xuc_fire_phase_window_deg: 8.0
+#
+# 2026-10-20 现场决定：暂时置 0（关闭）。依据（当天 10 场日志、154 发）：
+#  · 门开着时频率 0.19~0.5 发/s；门关闭（|ω|<0.30 自动旁路）时 1.04~1.10 发/s；
+#  · 相位速率不可信：有一场 ω 报 +1.5 rad/s，而体相位 44 s 内一直停在
+#    +55~+62°（换一面被 ±90° 拉回一次，净推进≈0），据此外推的弹着相位
+#    落在 fold 边界（|e| 中位 33.8°），门 90% 的时间是关的；
+#  · 唯一支持它的证据只有 10-19 23:38 那一场（靶心:中轴≈4:1），而那一场同时
+#    还带着 650d53d 的整车几何 + 方向性选板，收益无法单独归给相位门。
+# 重新启用的前提：把"换面时相位锚点被拉回"这件事修好（让净推进与逐帧转速一致）。
+xuc_fire_phase_window_deg: 0.0
 # 平均角速度的窗口长度；台架匀速，2.5 s 足够把 ω 抖动平均掉。
 xuc_fire_phase_rate_window_ms: 2500.0
 # Fixed targets keep xuc_fire_yaw_tolerance_deg and the 350 ms stable gate.
@@ -280,11 +297,21 @@ xuc_gyro_predicted_fire_enabled: true
 # High-speed rotation must not fall back to an instantaneous yaw-error shot
 # while the physical phase event clock is unlocked.  This prevents event=0,
 # cycle=-1 rounds such as shots 1-20 in the 2026-09-11 23:34 field log.
-xuc_gyro_require_event_lock_for_fire: true
-xuc_gyro_predicted_yaw_tolerance_deg: 1.5
+# 2026-10-20 定：高速靶是最终目标，本键置 false —— 事件钟 interval_safe 不成立时
+# 退回直接门控，否则高速档（ω≈4.5 rad/s）整场 0 发。对照实测：同一转速下带
+# fallback 的两场为 0.85 / 0.56 发/s，不带则 0 发。
+xuc_gyro_require_event_lock_for_fire: false
+# 直接门控的预测偏航容差。center_follow 下瞄准点超前量 ≤ r/d ≈ 3.9°，1.5° 会把
+# 大部分帧挡在门外，放 3.0° 让直接门控真正接管。
+xuc_gyro_predicted_yaw_tolerance_deg: 3.0
 xuc_gyro_predicted_yaw_trim_deg: 0.0
 xuc_gyro_visibility_yaw_tolerance_deg: 8.0
 xuc_gyro_fire_min_consecutive_frames: 2
+# 候选窗口迟滞：门控抖动连续 N 帧（≈N/60 s）仍保留候选窗口，超过才复位。
+# 相位窗一次只开 0.2 s 量级，单帧抖动就清零重来会把开火机会按帧数乘性削掉
+# （2026-10-20 实测：22 s 内 13 次候选启动 / 13 次复位，只成 2 发）。
+# 0 = 旧行为（单帧即复位），便于 A/B。
+xuc_fire_candidate_hold_frames: 3
 # The lower board starts each new feed about 0.59 s after the previous feed stops
 # (2026-09-12 log, 124 matched shots). Waiting 0.55 s here avoids stale queued
 # commands while preserving the lower board's actual maximum repeat cadence.
@@ -306,12 +333,16 @@ xuc_fire_cadence_fallback_ms: 700
 # 获得确定性转动时间。实测单帧约 10ms 不足，一颗弹常需 3~4 次脉冲才能推入入口。
 # 拨弹完成约需 40~180ms，建议从 120~150ms 起步，按实际出弹情况微调。
 # 2026-10-15 现场调参中（130ms）。
-xuc_shoot_hold_ms: 40.0
+# 2026-10-20 现场 A/B（目标：一次拨弹打出一颗弹）：
+#  40 ms → 运转 80 ms、推进角中位 315°、离散 4.9~6.9×（一颗弹常需 2~3 次触发）
+#  ~80 ms → 运转 160~175 ms、推进角中位 404~526°、离散 3.1~4.0×（明显收窄）
+# 现测 120 ms；130 ms 历史上出现过供料卡顿，再往上加要盯双发/卡弹。
+xuc_shoot_hold_ms: 120.0
 # At ~5 rad/s and 60 FPS the same armor advances ~5 deg/frame; a four-armor
 # identity switch is ~90 deg. Restart the two-frame window on a large phase jump.
 xuc_gyro_candidate_max_phase_step_deg: 20.0
 xuc_direct_yaw_guard: true              # 当前以稳定测量为主；保留预测接口供 EKF 调稳后启用
-xuc_direct_yaw_boresight_correction_deg: -0.5  # 2026-10-16 现场标定：原偏左，负值右移；-0.5° 在 4.45m 约右移 3.9cm
+xuc_direct_yaw_boresight_correction_deg: -2.65  # 2026-10-20 重标内参后现场重拉（旧值 -0.5 是按旧 K 调的）
 xuc_direct_yaw_impact_correction_deg: 0.0  # 已重置：旧值是按旧外参调出来的
 xuc_yaw_tracking_pi_enabled: false      # disabled: field jitter was model/lead switching; keep one dynamic controller
 xuc_yaw_tracking_kp: 0.0                # disable fast outer proportional loop; lower board already owns position P
@@ -342,7 +373,7 @@ xuc_direct_pitch_filter_tau_ms: 60.0     # retain post-shot noise damping withou
 xuc_direct_pitch_hold_ms: 180.0          # 已保存双轴验收值：短丢帧保持
 xuc_direct_pitch_max_rate_dps: 45.0      # midpoint between the stable-but-slow 25 and previously validated 80 deg/s
 xuc_direct_pitch_error_gain: 1.35        # recover steady-state authority; below the previously validated 1.65 gain
-xuc_projectile_speed_mps: 17.9        # 2026-10-16 实测（测速文件）：摩擦轮降速后弹速 17.3 m/s；2026-10-18复测：19m/s为0/20，17.3m/s为5/20；因果待更多样本确认
+xuc_projectile_speed_mps: 18.5        # 2026-10-20 现场值（小电脑同步）；2026-10-16 实测（测速文件）：摩擦轮降速后弹速 17.3 m/s；2026-10-18复测：19m/s为0/20，17.3m/s为5/20；因果待更多样本确认
 xuc_ballistic_reference_projectile_speed_mps: 10.0  # 0.91m/17cm实弹基准采集于2500rpm，禁止随当前转速重算
 xuc_ballistic_pitch_enabled: true
 xuc_camera_forward_of_muzzle_m: 0.06     # 实测：相机中心在炮口前方 6 cm
@@ -369,14 +400,23 @@ xuc_event_fire_delay_max_ms: 105
 # drift. The 85 ms calibration is unchanged during warm-up. A median/MAD window,
 # 1.5 ms per-shot slew limit and hard 65--105 ms bounds prevent oscillation.
 xuc_shot_delay_adaptation_enabled: true
-xuc_shot_delay_reference_ms: 0
-xuc_shot_delay_sample_min_ms: 3
-xuc_shot_delay_sample_max_ms: 80
+xuc_shot_delay_reference_ms: 235
+# 2026-10-20：自适应样本从「命令→拨弹起转」改为「命令→拨弹停转（≈出弹）」。
+# 当天 154 发实测：起转段 14~37 ms 很稳，拨弹运转段 40~160 ms、转速 300~1259 rpm
+# （差 4 倍），出弹时刻的抖动几乎全在这一段，所以样本改成整段、上下界随之放宽。
+# 基准 = high_speed_delay_time（0.10 s），偏移直接进 aimer 的提前量。
+xuc_shot_delay_sample_min_ms: 20
+xuc_shot_delay_sample_max_ms: 300
+xuc_shot_delay_min_ms: 50
+xuc_shot_delay_max_ms: 260
 xuc_shot_delay_window: 9
 xuc_shot_delay_min_samples: 5
 xuc_shot_delay_ewma_alpha: 0.35
 xuc_shot_delay_adaptation_gain: 1.0
-xuc_shot_delay_max_step_ms: 1.5
+# 每次最多挪的步长。2026-10-20：hold 从 40 改到 120 会把出弹时刻整体推迟
+# ~100 ms，1.5 ms/发 要 70 发才收敛，前十几发的提前量是错的；改 8 ms/发，
+# 10~15 发内跟上（中位窗 9 + EWMA 0.35 已经把单发 ±40 ms 的抖动滤掉了）。
+xuc_shot_delay_max_step_ms: 8.0
 xuc_shot_delay_outlier_sigma: 3.5
 xuc_shot_delay_outlier_floor_ms: 4
 xuc_shot_delay_95pi_min_half_ms: 8

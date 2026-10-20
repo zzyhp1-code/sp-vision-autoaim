@@ -499,6 +499,16 @@ int main(int argc, char * argv[])
       ? std::clamp(
           integration_yaml["xuc_gyro_fire_min_consecutive_frames"].as<int>(), 1, 10)
       : 2;
+  // 【候选窗口迟滞】相位门一次只开 0.2 s 左右（ω≈1.5 rad/s、窗口 10°），而候选窗
+  // 口要求“所有门连续两帧同时开”。任何一帧抖动都会让窗口归零重来，等效把可开火
+  // 机会按帧数乘性削掉。2026-10-20 实测：22 s 内 13 次候选窗口启动、13 次复位，
+  // 只成 2 发。这里允许连续 N 帧（默认 3，约 50 ms）门控合拢仍保留窗口，再真正
+  // 复位；0 = 恢复旧行为（单帧即复位，便于 A/B）。
+  const int xuc_fire_candidate_hold_frames =
+    integration_yaml["xuc_fire_candidate_hold_frames"]
+      ? std::clamp(
+          integration_yaml["xuc_fire_candidate_hold_frames"].as<int>(), 0, 30)
+      : 3;
   // Predictive fire uses one-frame pulses. Pending-shot and live feeder feedback
   // prevent overlapping requests; an optional post-feed hold remains available
   // for lower boards that require it, while zero enables feedback-driven repeat.
@@ -533,11 +543,22 @@ int main(int argc, char * argv[])
   shot_delay_config.enabled =
     integration_yaml["xuc_shot_delay_adaptation_enabled"] &&
     integration_yaml["xuc_shot_delay_adaptation_enabled"].as<bool>();
-  shot_delay_config.nominal_delay_s = xuc_event_fire_delay_s;
-  shot_delay_config.min_delay_s = std::min(
-    xuc_event_fire_delay_min_s, xuc_event_fire_delay_max_s);
-  shot_delay_config.max_delay_s = std::max(
-    xuc_event_fire_delay_min_s, xuc_event_fire_delay_max_s);
+  // 2026-10-20：自适应对象从「命令→拨弹起转」改为「命令→拨弹停转」。
+  // 实测（当天 154 发）：命令→起转只有 14~37 ms（很稳），而拨弹运转本身
+  // 40~160 ms、平均转速 300~1259 rpm（差 4 倍）——出弹时刻的抖动几乎全在
+  // 这一段。基准取 aimer 实际使用的 high_speed_delay_time，保证
+  // set_delay_adjustment() 给出的偏移与 aimer 的基准是同一个量。
+  shot_delay_config.nominal_delay_s = xuc_phase_high_speed_delay_s;
+  shot_delay_config.min_delay_s =
+    (integration_yaml["xuc_shot_delay_min_ms"]
+       ? std::clamp(
+           integration_yaml["xuc_shot_delay_min_ms"].as<double>(), 10.0, 300.0)
+       : 50.0) / 1000.0;
+  shot_delay_config.max_delay_s =
+    (integration_yaml["xuc_shot_delay_max_ms"]
+       ? std::clamp(
+           integration_yaml["xuc_shot_delay_max_ms"].as<double>(), 20.0, 400.0)
+       : 260.0) / 1000.0;
   shot_delay_config.reference_feedback_s =
     integration_yaml["xuc_shot_delay_reference_ms"]
       ? std::max(0.0, integration_yaml["xuc_shot_delay_reference_ms"].as<double>()) /
@@ -917,6 +938,7 @@ int main(int argc, char * argv[])
   bool xuc_fire_candidate_active = false;
   bool xuc_fire_ready_logged = false;
   int xuc_fire_candidate_frames = 0;
+  int xuc_fire_candidate_miss = 0;
   double xuc_fire_candidate_face_yaw_rad = INFINITY;
   std::chrono::steady_clock::time_point xuc_fire_candidate_since;
   bool xuc_one_face_armed = true;
@@ -930,6 +952,9 @@ int main(int argc, char * argv[])
   bool xuc_gyro_cadence_hold_logged = false;
   // 误差拐点判据用的上一帧弹着偏航误差（rad）；仅观测，不参与控制以外的东西。
   double prev_pred_yaw_error_rad = NAN;
+  // 上一帧的**弹着相位**误差（rad，已 fold 到 ±45°）。相位门生效时用它判断
+  // “是否已到本面内最接近对齐的那一帧”，替代与相位无关的 yaw 误差拐点。
+  double prev_signed_impact_phase_rad = NAN;
   // 体相位历史（时间[s], 体相位[rad]）与窗口平均角速度，供弹着相位门使用。
   // 只依赖实测体相位，与 YawESKF 的瞬时 ω 解耦。
   std::deque<std::pair<double, double>> body_phase_history;
@@ -953,6 +978,7 @@ int main(int argc, char * argv[])
   bool xuc_pending_shot = false;
   std::chrono::steady_clock::time_point xuc_pending_shot_time;
   std::chrono::steady_clock::time_point xuc_active_shot_start_time;
+  double xuc_active_shot_command_ms = 0.0;   // 命令→拨弹起转，用于算出弹时刻
   std::chrono::steady_clock::time_point fps_measure_start; // 平均帧率测量开始时间
   bool fps_measure_started = false;
 
@@ -1055,30 +1081,7 @@ int main(int argc, char * argv[])
                     command_to_feeder_ms <= xuc_shot_feedback_timeout_s * 1000.0) {
                   xuc_active_shot_id = xuc_pending_shot_id;
                   xuc_active_shot_start_time = feeder_edge_time;
-                  const auto adaptation =
-                    shot_delay_adapter.update(command_to_feeder_ms / 1000.0);
-                  if (adaptation.accepted) {
-                    aimer.set_delay_adjustment(shot_delay_adapter.delay_adjustment_s());
-                    if (adaptation.regime_change) {
-                      tools::logger()->warn(
-                        "[SHOTADAPT] persistent feeder-delay shift detected; "
-                        "rebuilding robust window");
-                    }
-                    tools::logger()->info(
-                      "[SHOTADAPT] id={} feeder_ms={:.2f} samples={} ready={} "
-                      "delay_ms={:.2f} pi95_ms=[{:.2f},{:.2f}]",
-                      xuc_active_shot_id, command_to_feeder_ms,
-                      adaptation.sample_count, adaptation.ready ? 1 : 0,
-                      adaptation.delay_s * 1000.0,
-                      adaptation.delay_min_s * 1000.0,
-                      adaptation.delay_max_s * 1000.0);
-                  } else if (adaptation.rejected_outlier) {
-                    tools::logger()->warn(
-                      "[SHOTADAPT] id={} rejected feeder outlier {:.2f} ms; "
-                      "delay held at {:.2f} ms",
-                      xuc_active_shot_id, command_to_feeder_ms,
-                      shot_delay_adapter.delay_s() * 1000.0);
-                  }
+                  xuc_active_shot_command_ms = command_to_feeder_ms;
                   tools::logger()->info(
                     "[SHOT] id={} feeder_start command_to_feeder_ms={:.2f} rpm={:.0f}",
                     xuc_active_shot_id, command_to_feeder_ms, feeder_feedback.rpm);
@@ -1099,9 +1102,34 @@ int main(int argc, char * argv[])
                 const double feeder_motion_ms =
                   std::chrono::duration<double, std::milli>(
                     feeder_edge_time - xuc_active_shot_start_time).count();
+                const double release_ms = xuc_active_shot_command_ms + feeder_motion_ms;
                 tools::logger()->info(
-                  "[SHOT] id={} feeder_stop feeder_motion_ms={:.1f}",
-                  xuc_active_shot_id, feeder_motion_ms);
+                  "[SHOT] id={} feeder_stop feeder_motion_ms={:.1f} "
+                  "command_to_release_ms={:.1f}",
+                  xuc_active_shot_id, feeder_motion_ms, release_ms);
+                // 自适应延时：样本 = 命令→拨弹停转（≈出弹），这是抖动的来源。
+                const auto adaptation = shot_delay_adapter.update(release_ms / 1000.0);
+                if (adaptation.accepted) {
+                  aimer.set_delay_adjustment(shot_delay_adapter.delay_adjustment_s());
+                  if (adaptation.regime_change) {
+                    tools::logger()->warn(
+                      "[SHOTADAPT] persistent feeder-delay shift detected; "
+                      "rebuilding robust window");
+                  }
+                  tools::logger()->info(
+                    "[SHOTADAPT] id={} release_ms={:.2f} samples={} ready={} "
+                    "delay_ms={:.2f} adjust_ms={:+.2f} pi95_ms=[{:.2f},{:.2f}]",
+                    xuc_active_shot_id, release_ms, adaptation.sample_count,
+                    adaptation.ready ? 1 : 0, adaptation.delay_s * 1000.0,
+                    shot_delay_adapter.delay_adjustment_s() * 1000.0,
+                    adaptation.delay_min_s * 1000.0,
+                    adaptation.delay_max_s * 1000.0);
+                } else if (adaptation.rejected_outlier) {
+                  tools::logger()->warn(
+                    "[SHOTADAPT] id={} rejected feeder outlier {:.2f} ms; "
+                    "delay held at {:.2f} ms",
+                    xuc_active_shot_id, release_ms, shot_delay_adapter.delay_s() * 1000.0);
+                }
                 xuc_active_shot_id = 0;
               }
               tools::logger()->info(
@@ -1303,13 +1331,36 @@ int main(int argc, char * argv[])
       }
       const double phase_span_s = now_phase_s - body_phase_history.front().first;
       if (body_phase_history.size() >= 3 && phase_span_s > 0.4) {
-        double unwrapped = 0.0;
+        // 稳健窗口角速度：逐帧差分折叠到 ±45° 后取**中位数**，不再累加。
+        // 累加会把换面跳变、关联切换和相位抖动的尖峰全部计入，静止或慢转时
+        // 也能累出 1 rad/s 量级的假角速度，进而把相位门拉起来又算不准弹着
+        // 相位。中位数对少量尖峰免疫，正常匀速旋转时与累加结果一致。
+        std::vector<double> deltas;
+        double net_delta = 0.0;
+        deltas.reserve(body_phase_history.size() - 1);
         for (std::size_t i = 1; i < body_phase_history.size(); ++i) {
-          unwrapped += std::remainder(
+          const double d = std::remainder(
             body_phase_history[i].second - body_phase_history[i - 1].second,
             M_PI / 2.0);
+          deltas.push_back(d);
+          net_delta += d;
         }
-        body_phase_rate_window = unwrapped / phase_span_s;
+        auto mid = deltas.begin() + static_cast<std::ptrdiff_t>(deltas.size() / 2);
+        std::nth_element(deltas.begin(), mid, deltas.end());
+        const double median_delta = *mid;
+        const double mean_dt_s = phase_span_s / static_cast<double>(deltas.size());
+        const double median_rate =
+          mean_dt_s > 1e-6 ? median_delta / mean_dt_s : gyro_omega_rad_s;
+        const double net_rate = net_delta / phase_span_s;
+        // 【一致性守卫】相位锚点若每换一面被 ±90° 拉回一次（锯齿），逐帧中位数
+        // 看到的是“每帧爬升”的假转速，而相位本身没有净推进。用中位数定时会把
+        // 弹着相位算错、并把相位门关死。2026-10-20 20:10 实测：rate 报
+        // +1.5 rad/s，body_phase 在 44 s 内一直停在 +55~+62°，频率 0.19 发/s；
+        // 同一场前 5 发在 rate≈0（相位门未激活）时是 ≈1.04 发/s。
+        // 净推进与中位数背离 ⇒ 相位不可用于定时，改报净推进（≈0），
+        // 让 |rate| < 0.30 的判据自动撤销相位门、交回直接门控。
+        body_phase_rate_window =
+          std::abs(net_rate) >= 0.5 * std::abs(median_rate) ? median_rate : net_rate;
       } else {
         body_phase_rate_window = gyro_omega_rad_s;   // 刚捕获目标时回退
       }
@@ -2257,11 +2308,20 @@ int main(int argc, char * argv[])
           xuc_event_gimbal_tracking_tolerance_rad &&
         gyro_event_lead_error_s >= 0.0 &&
         gyro_event_lead_error_s <= xuc_event_trigger_window_s;
+      // 2026-10-20：高速靶实测（ω≈4.9 rad/s，面周期 320 ms）事件钟虽然 lock
+      // 上了，但 worst_interval_phase≈48° 远大于半窗 12.5°+grace，interval_safe
+      // 恒为 false；而只要 schedule_valid 成立就只认事件门 ⇒ 整场 0 发
+      // （logs/2026-10-20_21-04-51.log、21-51-43.log，两场各 90 s 零开火）。
+      // 改成：事件钟只有在 interval_safe 时才接管；不安全时按
+      // require_event_lock_for_fire 决定是否退回直接门控（该键已置 false）。
+      // 对照实测：同一转速（−4.5~−4.7 rad/s）下，带本 fallback 的
+      // 21:45:13 / 21:46:53 两场分别是 0.85 / 0.56 发/s。
+      const bool event_gate_authoritative =
+        gyro_event_schedule_valid && gyro_event_interval_safe;
       const bool yaw_gate_open = gyro_predicted_fire_active
-        ? (gyro_event_schedule_valid
+        ? (event_gate_authoritative
              ? gyro_event_gate_open
-             : (!xuc_gyro_require_event_lock_for_fire &&
-                gyro_yaw_gate_native_open))
+             : (!xuc_gyro_require_event_lock_for_fire && gyro_yaw_gate_native_open))
         : (vehicle_predicted_fire_active
              ? gyro_yaw_gate_native_open
              : stationary_yaw_gate_open);
@@ -2291,18 +2351,48 @@ int main(int argc, char * argv[])
       }
       prev_pred_yaw_error_rad =
         (predictive_fire_active && std::isfinite(pred_err_rad)) ? pred_err_rad : NAN;
+      // 【相位拐点】同样的"到谷底"判据，但作用于**弹着相位误差**本身（真正的
+      // 命中物理量），只在相位门生效时使用。yaw 误差的拐点与相位窗是两件独立
+      // 的事，两者同时要求等于重复筛选一次（2026-10-20 现场：74 次候选只成 13 发）。
+      double next_impact_phase_rad = NAN;
+      bool phase_error_at_minimum = false;
+      if (impact_phase_gate_active && std::isfinite(shot_diag_signed_phase_rad) &&
+          std::isfinite(prev_signed_impact_phase_rad)) {
+        next_impact_phase_rad = std::remainder(
+          shot_diag_signed_phase_rad + std::remainder(
+            shot_diag_signed_phase_rad - prev_signed_impact_phase_rad, M_PI / 2.0),
+          M_PI / 2.0);
+        phase_error_at_minimum =
+          std::abs(shot_diag_signed_phase_rad) <= std::abs(next_impact_phase_rad) ||
+          std::abs(next_impact_phase_rad) > 0.5 * xuc_fire_phase_window_rad;
+      }
+      prev_signed_impact_phase_rad =
+        (impact_phase_gate_active && std::isfinite(shot_diag_signed_phase_rad))
+          ? shot_diag_signed_phase_rad : NAN;
       // Fire-gate diagnostic for both medium-speed prediction and the high-speed
       // event clock; low-speed dead zones were previously invisible here.
       static int b2_diag_log = 0;
-      if (predictive_fire_active && ++b2_diag_log % 50 == 0) {
+      static auto b2_diag_last = std::chrono::steady_clock::now();
+      ++b2_diag_log;
+      // 定时而非按帧：ω≈1.5 rad/s 时一个面 ≈1 s，按 50 帧（≈0.8 s）采样会与换面
+      // 同频，样本全部落在相位窗外的同一区段（2026-10-20 实测 12 个样本
+      // phase_err 全在 17~44°，看起来“相位门 100% 关”，实际是混叠）。
+      if (predictive_fire_active &&
+          std::chrono::duration<double>(t - b2_diag_last).count() >= 0.25) {
+        b2_diag_last = t;
         tools::logger()->info(
           "[B2DIAG] auto={} control={} conv={} oneface_gate={} armed={} motion={} "
-          "cadence={} dyaw_fresh={} dpitch_fresh={} yawgate={} event={} safe={} "
+          "cadence={} dyaw_fresh={} dpitch_fresh={} yawgate={} yvalid={} "
+          "event={} safe={} "
           "face={} face_ok={} phasegate={} phase_err_deg={:.2f} "
           "phase_rate={:+.2f} face_align_deg={:.2f} phase_unc_deg={:.2f} "
           "gimbal_err_deg={:.2f} due_ms={:+.1f} window_deg={:.2f} "
           "worst_deg={:.2f} combined_deg={:.2f} "
-          "yawerr_deg={:.2f} pitcherr_deg={:.2f}",
+          "yawerr_deg={:.2f} pitcherr_deg={:.2f} "
+          "better={} cand={} miss={} "
+          "phmin={} next_phase_deg={:+.2f} "
+          "phase_signed_deg={:+.2f} horizon_ms={:.1f} body_phase_deg={:+.2f} "
+          "center_yaw_deg={:+.2f} ekf_omega={:+.2f}",
           auto_mode_active ? 1 : 0, command.control ? 1 : 0,
           convergence_gate_open ? 1 : 0,
           one_face_gate_open ? 1 : 0, xuc_one_face_armed ? 1 : 0,
@@ -2310,7 +2400,8 @@ int main(int argc, char * argv[])
           feedback_cadence_gate_open ? 1 : 0,
           direct_yaw_measurement_fresh ? 1 : 0,
           direct_pitch_measurement_fresh ? 1 : 0,
-          yaw_gate_open ? 1 : 0, gyro_event_schedule_valid ? 1 : 0,
+          yaw_gate_open ? 1 : 0, gyro_predicted_impact_yaw_valid ? 1 : 0,
+          gyro_event_schedule_valid ? 1 : 0,
           gyro_event_interval_safe ? 1 : 0,
           gyro_event_face_id, gyro_event_face_valid ? 1 : 0,
           impact_phase_gate_open ? 1 : 0, impact_phase_err_rad * 180.0 / M_PI,
@@ -2323,9 +2414,23 @@ int main(int argc, char * argv[])
           gyro_event_worst_phase_rad * 180.0 / M_PI,
           gyro_event_combined_phase_rad * 180.0 / M_PI,
           direct_yaw_pixel_error_rad * 180.0 / M_PI,
-          direct_pitch_pixel_error_rad * 180.0 / M_PI);
+          direct_pitch_pixel_error_rad * 180.0 / M_PI,
+          current_frame_is_better ? 1 : 0,
+          xuc_fire_candidate_frames, xuc_fire_candidate_miss,
+          phase_error_at_minimum ? 1 : 0,
+          next_impact_phase_rad * 180.0 / M_PI,
+          // 相位门闭环诊断（2026-10-20 新增）：此前只有 [SHOT] 才打 signed 相位，
+          // 而开火样本受门控选择、看不到"预测相位到底怎么走"。带上 horizon 与两个
+          // 相位源，252 个 250 ms 样本就能还原真实扫掠速率 ω_true 与预测偏置，
+          // 判断 phase_rate（窗口估计）是否偏低、窗口中心是否偏移。
+          shot_diag_signed_phase_rad * 180.0 / M_PI,
+          shot_diag_phase_horizon_s * 1000.0,
+          gyro_body_phase_rad * 180.0 / M_PI,
+          gyro_center_yaw * 180.0 / M_PI,
+          gyro_omega_rad_s);
       }
       if (fire_candidate) {
+        xuc_fire_candidate_miss = 0;
         const double candidate_face_yaw_rad = gyro_event_face_valid
           ? static_cast<double>(gyro_event_face_id) * M_PI / 2.0
           : aimer.debug_aim_point.xyza[3];
@@ -2368,9 +2473,28 @@ int main(int argc, char * argv[])
           const int ev_need_frames = gyro_event_schedule_valid
             ? 1
             : xuc_gyro_fire_min_consecutive_frames;
+          // 【相位门生效时用"相位误差最小"选时刻，不再叠加 yaw 误差拐点】
+          // (2026-10-20 现场数据) current_frame_is_better 判的是**预测弹着 yaw
+          // 误差**（±3° 量级的独立振荡）的局部极小，而且要求它恰好落在相位窗里：
+          // 今天 74 次候选只成 13 发、间隔中位 3.66 s（≈3.6 个面），而 10-19 同一
+          // 靶、同一套相位门上是 0.91 s/发。相位门本身已经把开火时刻钉在"弹丸到达
+          // 瞬间最近的装甲板压在视线中心"，yaw 拐点是"跟板瞄准"时代替相位的代理
+          // 量，两者同时要求属于重复筛选。
+          // 但也不能改成"窗口一开就打"：±10° 窗口在 r=0.27 m 上等于 ±4.7 cm，
+          // 从窗口边缘开火会把弹着系统性推到板前缘（正是用户报的现象）。
+          // ⇒ 相位门生效时只在**内半窗**（|e| ≤ 窗口/2 = 5° ≈ ±2.4 cm，且相位误差
+          //   已到谷底或即将出内半窗）开火：每一面必有一次机会，频率回到 ~1 发/面
+          //   （≈1 发/秒），系统性边缘偏差同时减半。相位门不生效（静止/低速，
+          //   走各自的门）时保留原有 yaw 拐点规则。
+          const bool impact_moment_selected_by_phase = impact_phase_gate_active;
+          const bool phase_moment_ready = impact_phase_gate_active &&
+            std::isfinite(shot_diag_signed_phase_rad) &&
+            std::abs(shot_diag_signed_phase_rad) <= 0.5 * xuc_fire_phase_window_rad &&
+            phase_error_at_minimum;
           command.shoot =
             (xuc_fire_candidate_frames >= ev_need_frames) && !xuc_fire_ready_logged &&
-            current_frame_is_better;
+            (impact_moment_selected_by_phase ? phase_moment_ready
+                                             : current_frame_is_better);
         } else {
           const double required_stable_s = one_face_policy_active
             ? xuc_gyro_fire_stable_s
@@ -2415,14 +2539,25 @@ int main(int argc, char * argv[])
           }
         }
       } else {
-        if (xuc_fire_candidate_active) {
-          tools::logger()->info("[XUC][FIRE] stable window reset");
+        // 迟滞：门控抖动单帧不再立刻丢弃候选窗口。相位窗本身一次只开
+        // 0.2 s 量级，若每帧抖动都清零重来，实际可开火机会会按帧数乘性减少
+        // （2026-10-20 实测 13 次候选只成 2 发）。连续 miss 超过上限才复位。
+        ++xuc_fire_candidate_miss;
+        if (xuc_fire_candidate_active &&
+            xuc_fire_candidate_miss <= xuc_fire_candidate_hold_frames) {
+          command.shoot = false;
+        } else {
+          if (xuc_fire_candidate_active) {
+            tools::logger()->info(
+              "[XUC][FIRE] stable window reset ({} consecutive misses)",
+              xuc_fire_candidate_miss);
+          }
+          xuc_fire_candidate_active = false;
+          xuc_fire_ready_logged = false;
+          xuc_fire_candidate_frames = 0;
+          xuc_fire_candidate_face_yaw_rad = INFINITY;
+          command.shoot = false;
         }
-        xuc_fire_candidate_active = false;
-        xuc_fire_ready_logged = false;
-        xuc_fire_candidate_frames = 0;
-        xuc_fire_candidate_face_yaw_rad = INFINITY;
-        command.shoot = false;
       }
     } else {
       command.shoot = native_shoot;

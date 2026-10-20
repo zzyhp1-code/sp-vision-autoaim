@@ -22,9 +22,10 @@ R_gimbal2imubody: [-1, 0, 0, 0, 1, 0, 0, 0, -1]
 # 2026-10-09, 23 images; mean reprojection error: 0.5066px; RMS: 0.5962px
 # 2048x1200 centered ROI, OffsetX=512, OffsetY=424; full sensor: 3072x2048
 # Crop translation only: cx -= 512, cy -= 424; fx/fy and distortion unchanged.
-camera_matrix: [2598.5969903289788, 0, 953.5059081485417, 0, 2617.5444216804849, 629.8878367134425, 0, 0, 1]
+camera_matrix: [2613.6238346662558, 0, 831.13793261490321, 0, 2623.9361517252046, 601.15236567678858, 0, 0, 1]
 # [k1, k2, p1, p2, k3]
-distort_coeffs: [-0.016769610101706224, 0.095334726640603468, 0.0030276490387946948, 0.0015186953278450821, 0]
+# 2026-10-20 重标（光圈/焦距动过，23 张，1600x1080 瞄准窗口，rms 0.2829 px）
+distort_coeffs: [-0.14672657883564594, 0.63738545399917312, -0.00079995678728670956, -0.0020413307914658638, 0]
 
 #####-----相机/云台外参（手眼标定后回填）-----#####
 # 2026-10-10：旧注释作废（那份 R 含 180° 伪影，与正确值差 13.5°，别再用于任何验证）
@@ -34,12 +35,17 @@ t_camera2gimbal: [0.20, 0.05, 0.02]
 
 #####-----相机配置（海康）-----#####
 camera_name: "hikrobot"
-exposure_ms: 3.0
-gain: 10.0
-camera_width: 2048
-camera_height: 1200
-camera_offset_x: 512             # (3072 - 2048) / 2
-camera_offset_y: 424             # (2048 - 1200) / 2
+# 2026-10-20：与实弹采集保持一致（现场光圈调过，亮度需同一口径复核）
+exposure_ms: 6.0
+gain: 16.0
+# 内参在「瞄准实际使用的窗口」上标定：
+#  · 该窗口已验证可出图（3072x2048 全画幅 StartGrabbing 0x80000006 起不来）；
+#  · 畸变在用到的区域上拟合，不靠外推；
+#  · 输出即瞄准坐标，回填 standard.yaml 时不需要平移 cx/cy。
+camera_width: 1600
+camera_height: 1080
+camera_offset_x: 736
+camera_offset_y: 480
 camera_fps: 60.0
 white_balance_auto: "off"
 hikrobot_pixel_format: "BayerRG8"
