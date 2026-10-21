@@ -301,6 +301,13 @@ if(OpenVINO_FOUND)
     target_link_libraries(corner_probe ${OpenCV_LIBS} fmt::fmt yaml-cpp tools auto_aim io)
 endif()
 
+# PnP 解算核对工具：逐帧导出位置/射程/姿态/重投影残差，用于验证内参与畸变。
+# 只读，不发送任何控制帧。
+if(OpenVINO_FOUND)
+    add_executable(pnp_probe tests/pnp_probe.cpp)
+    target_link_libraries(pnp_probe ${OpenCV_LIBS} fmt::fmt yaml-cpp tools auto_aim io)
+endif()
+
 # XUC 上下位机运动联调探针：默认 dry-run，--execute 才下发 control=1，带步长与门控硬保护。
 # 只依赖 io（串口），不需要 OpenVINO。
 add_executable(xuc_motion_probe tests/xuc_motion_probe.cpp)

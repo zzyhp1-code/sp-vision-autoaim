@@ -8,7 +8,7 @@
 # 基于 complete_template.yaml，相机换为海康 hikrobot，内外参已回填，附 XUC 串口键。
 
 #####-----基础配置-----#####
-# 敌方颜色：red | blue
+# 敌方颜色：红色或蓝色
 enemy_color: "blue"
 
 #####-----神经网络参数-----#####
@@ -21,7 +21,7 @@ yolo_name: yolo26
 # 数字/字迹分类器模型路径
 classify_model: assets/tiny_resnet.onnx
 
-#####-----OpenVINO模型路径-----#####
+#####-----OpenVINO 模型路径-----#####
 # YOLO模型路径（根据yolo_name选择对应模型）
 yolo11_model_path: assets/yolo11.xml      # 输入640×640
 yolov8_model_path: assets/yolov8.xml        # 输入416×416
@@ -50,13 +50,13 @@ min_keypoint_confidence: 0.0
 letterbox_value: 114
 yolo26_swap_rb: false
 yolo26_refine_color: true
-# Low-confidence candidates are accepted only when color, keypoints and
-# quadrilateral geometry independently agree. Red and blue use symmetric gates.
+# 仅当颜色、关键点和四边形几何信息彼此一致时，才接受低置信度候选目标。
+# 红蓝两种颜色使用对称的判定条件。
 yolo26_candidate_confidence: 0.04
 yolo26_color_confirmed_min_confidence: 0.04
 yolo26_memory_confirmed_min_confidence: 0.06
 yolo26_color_confirmed_min_keypoint_confidence: 0.75
-# Normalized score: 100*(R-B)/(R+B), independent of absolute exposure.
+# 归一化得分：100*(R-B)/(R+B)，不受绝对曝光量影响。
 yolo26_color_min_delta: 8.0
 yolo26_color_single_bar_min_delta: 12.0
 yolo26_color_min_brightness: 30
@@ -65,9 +65,8 @@ yolo26_color_hold_frames: 20
 detector_debug: false
 
 use_traditional: true
-# YOLO26 previously ignored use_traditional.  The adaptive two-light-bar
-# refiner now uses it as the default enable and safely keeps network corners
-# whenever no geometrically consistent image candidate is found.
+# YOLO26 之前会忽略 use_traditional。自适应双灯条细化器现在将其作为默认启用开关；
+# 如果找不到几何上相符的图像候选，就安全地保留网络输出的角点。
 yolo26_refine_corners: true
 corner_refine_roi_length_scale: 1.8
 corner_refine_roi_width_scale: 0.9
@@ -100,11 +99,11 @@ max_armor_ratio: 5
 max_side_ratio: 1.5
 max_rectangular_error: 25
 
-#####-----Tracker（跟踪器）参数-----#####
+#####-----跟踪器参数-----#####
 min_detect_count: 5
 tracker_association_max_cost: 0.8
 tracker_batch_max_observations: 4
-# Fuse multiple rigid-body faces in both vehicle and high-speed modes.
+# 在车体模式和高速模式下，融合多个刚体装甲面的观测。
 tracker_batch_min_omega_rad_s: 1.5
 tracker_target_switch_min_frames: 3
 # 发散确认帧数：EKF 半径超出 [0.05, 0.5] 时，需连续这么多帧才判定目标丢失。
@@ -112,24 +111,24 @@ tracker_target_switch_min_frames: 3
 # 2026-10-14 实测：单帧判定在手持快速移动下产生 64 次发散、22 次短暂丢失。
 # 2026-10-15 调整为 4 帧（约 65ms @60fps）作为灵敏度与稳定性的折中。
 tracker_diverge_confirm_frames: 4
-# Robust iterated whole-vehicle update.  Yaw remains federated with YawESKF.
+# 稳健的整车迭代更新。偏航仍由 YawESKF 联合处理。
 whole_state_iekf_enabled: true
 whole_state_iekf_max_iterations: 4
 whole_state_iekf_stop_threshold: 0.0001
 whole_state_iekf_huber_threshold: 1.5
-# Independent SO(2) yaw ESKF used for model selection and future face phase.
-# The 11-state EKF remains responsible for vehicle centre/radius/height.
+# 独立的 SO(2) 偏航 ESKF，用于模型选择和未来装甲面相位估计。
+# 11 状态 EKF 仍负责估计车体中心、半径和高度。
 yaw_eskf_angular_jerk_variance: 20.0
 yaw_eskf_measurement_floor_deg: 1.0
 yaw_eskf_nis_reject_threshold: 16.0
 yaw_eskf_min_trusted_updates: 6
 yaw_eskf_trusted_rate_std_rad_s: 2.0
-yaw_eskf_max_trusted_abs_rate_rad_s: 8.0       # reject association-induced spikes seen at 15--40 rad/s
+yaw_eskf_max_trusted_abs_rate_rad_s: 8.0       # 拒绝关联导致的异常尖峰；此类尖峰可达 15--40 rad/s
 yaw_eskf_max_trusted_abs_acceleration_rad_s2: 30.0
 max_temp_lost_count: 15
 outpost_max_temp_lost_count: 75
 
-#####-----Aimer（瞄准器）参数-----#####
+#####-----瞄准器参数-----#####
 yaw_offset: 0.0  # 动态视觉跟随以测量中心为零；避免静态偏置被计入预测超前量
 pitch_offset: 6.0          # 2026-10-20 现场值（小电脑 standard.yaml 同步）
 
@@ -137,8 +136,8 @@ comming_angle: 60
 leaving_angle: 20
 
 decision_speed: 0.8
-# Field feedback explicitly selected an 85 ms command-to-impact prediction.
-# Keep high- and low-speed prediction on the same physical calibration.
+# 根据现场反馈，明确采用 85 ms 的命令至弹着预测延迟。
+# 高速和低速预测均使用同一套实测标定值。
 # 2026-10-20 实测（当天 154 次拨弹）：开火命令→拨弹起转 23.5 ms（14.4~37），
 # 起转→停转 74.4 ms（39.8~164.2），即命令→出弹 ≈ 98 ms。
 # 此处同时决定「瞄准点超前量」与「弹着相位门的推算时域」，必须用实测值：
@@ -156,11 +155,11 @@ yaw_ramp_t0: 0.10
 yaw_ramp_t0_pos: 0.10
 yaw_ramp_t0_neg: 0.10
 
-#####-----Shooter（开火控制）参数-----#####
+#####-----开火控制参数-----#####
 first_tolerance: 3
 second_tolerance: 2
 judge_distance: 2
-# Phase 2D.5 fire dry-run: calculate/log eligibility, but XUC transmission stays blocked.
+# 阶段 2D.5 开火空跑：计算并记录开火条件是否满足，但仍阻止向 XUC 发送开火命令。
 auto_fire: true
 
 #####-----相机配置（海康 HikRobot）-----#####
@@ -189,10 +188,10 @@ trigger_source: 2
 trigger_activation: 0
 
 #####-----相机标定参数（海康内参/外参，1440×1080）-----#####
-# 2026-10-09, 23 images; mean reprojection error: 0.5066px; RMS: 0.5962px
-# 1600x1080 centered ROI, OffsetX=736, OffsetY=480; full sensor: 3072x2048
-# Crop translation only: cx -= 736, cy -= 480; fx/fy and distortion unchanged.
-# Full-frame principal point (1465.505908, 1053.887837) minus the crop origin.
+# 2026-10-09，使用 23 张图像；平均重投影误差：0.5066 px；均方根误差：0.5962 px。
+# 1600x1080 居中感兴趣区域，OffsetX=736、OffsetY=480；传感器完整尺寸：3072x2048。
+# 仅进行裁剪平移：cx -= 736、cy -= 480；fx/fy 和畸变参数保持不变。
+# 完整画幅主点 (1465.505908, 1053.887837) 减去裁剪区域原点。
 camera_matrix: [2613.6238346662558, 0, 831.13793261490321, 0, 2623.9361517252046, 601.15236567678858, 0, 0, 1]
 distort_coeffs: [-0.14672657883564594, 0.63738545399917312, -0.00079995678728670956, -0.0020413307914658638, 0]
 
@@ -204,7 +203,7 @@ R_gimbal2imubody: [-1, 0, 0, 0, 1, 0, 0, 0, -1]
 R_camera2gimbal: [0.021136135, -0.009577720, 0.999730729, -0.999776201, -0.001103297, 0.021126526, 0.000900656, -0.999953524, -0.009598896]
 t_camera2gimbal: [0.20, 0.05, 0.02]
 
-#####-----CAN协议配置-----#####
+#####-----CAN 协议配置-----#####
 new_can_quat_id: 0x150
 new_can_cmd_id: 0x170
 can_interface: "can0"
@@ -212,7 +211,7 @@ cboard_enable: false             # 新版IMU接到下位机，禁止等待旧CAN
 debug_rx: false
 debug_tx: false
 
-#####-----轨迹规划器（Planner）参数-----#####
+#####-----轨迹规划器参数-----#####
 fire_thresh: 0.0035
 max_yaw_acc: 100
 Q_yaw: [9e6, 0]
@@ -221,7 +220,7 @@ max_pitch_acc: 100
 Q_pitch: [9e6, 0]
 R_pitch: [1]
 
-#####-----XUC 新版双向串口（实际波特率接板确认）-----#####
+#####-----XUC 新版双向串口（实际波特率需接板确认）-----#####
 xuc_enable: true                 # 接收IMU，发送云台目标角
 xuc_serial_port: "/dev/serial/by-id/usb-1a86_USB_Serial-if00-port0"
 xuc_serial_baud: 460800          # 与下位机 USART6 一致
@@ -229,7 +228,7 @@ xuc_yaw_sign: 1                 # 命令 yaw 符号；约定：帧内 yaw 增大
 xuc_pitch_sign: 1                # 命令 pitch 符号；约定：帧内 pitch 增大 = 向下俯
 xuc_imu_angle_unit: deg         # 回传 IMU 角度单位（驱动转为弧度）
 xuc_command_angle_unit: deg     # 下发命令单位；电控 73ea451 固件期望度（与 GetAngleYaw 同单位）
-xuc_imu_yaw_sign: -1            # Match calibration; user verified raw yaw on 2026-10-10
+xuc_imu_yaw_sign: -1            # 与标定保持一致；用户已于 2026-10-10 核实原始偏航值
 xuc_imu_pitch_sign: 1            # 下位机IMU pitch方向，实机小角度确认
 xuc_imu_yaw_offset_rad: 0.0
 xuc_imu_pitch_offset_rad: 0.0
@@ -237,31 +236,30 @@ xuc_require_feedback_for_control: true
 xuc_require_auto_mode_for_control: false  # 下位机按当前遥控器档位直接回报 mode；避免串口互锁
 xuc_max_yaw_excursion_rad: 0.0          # 双轴联调：上位机不额外截断，下位机保留 Yaw ±25°/实际±28°保护
 xuc_lock_pitch_for_control: false       # 允许下发 Pitch；下位机限制 ±15°/80°每秒
-xuc_allow_control: true             # low-light yaw/pitch follow test
+xuc_allow_control: true             # 弱光环境下的偏航/俯仰跟随测试
 xuc_allow_shoot: true               # 2026-10-12 22:35 解除开火限制（试射）；其余发射门控全部保留
 # 2026-10-14 新增：常驻 control 开关。开启后，AUTO 档内目标丢失超短时窗口时，
 # 保持 control=1（摩擦轮继续转）并锁定当前姿态（云台不动），避免反复停启。
 # 退出 AUTO 或链路失效时自动失效，控制权交还遥控器。
 # 2026-10-15 现场已启用（与远程一致）。
 xuc_control_persist_enabled: true
-xuc_fire_guard_enabled: true       # require fresh measured armor in both axes
-xuc_fire_stable_ms: 120.0          # short debounce; feedback-driven pulses handle repetition
+xuc_fire_guard_enabled: true       # 要求两个轴方向上均有新鲜的装甲板实测值
+xuc_fire_stable_ms: 120.0          # 短时防抖；重复触发由反馈驱动的脉冲处理
 xuc_fire_yaw_tolerance_deg: 3.0    # 0.91m约±4.8cm，仍在小装甲板水平范围内
 xuc_fire_pitch_tolerance_deg: 1.1  # 介于无射击的0.8°与明显低弹的2.0°之间；配合更强Pitch闭环
 xuc_gyro_center_follow_enabled: true
 xuc_gyro_omega_threshold_rad_s: 0.8
-# Trust-aware armor -> vehicle -> phase-clock model selection.
+# 根据可信度选择装甲板、车体或相位时钟模型。
 xuc_vehicle_model_enter_rad_s: 0.8
 xuc_vehicle_model_exit_rad_s: 0.45
 xuc_high_speed_enter_rad_s: 3.2
 xuc_high_speed_exit_rad_s: 2.5
 xuc_rotation_mode_dwell_ms: 600
-xuc_rotation_tracker_dropout_hold_ms: 250  # short face hand-over: retain model but keep fire inhibited
+xuc_rotation_tracker_dropout_hold_ms: 250  # 装甲面短暂交接时保留模型，但禁止开火
 xuc_rotation_rate_filter_tau_ms: 100
-# Armor hand-over makes the raw EKF omega dip by about 1.3--1.8 rad/s once
-# per face while the crossing PLL remains stable at about 4.5 rad/s.  Do not
-# throw away a good phase lock for that periodic estimator ripple; a real
-# fast/slow transition still crosses the 3.2/2.5 rad/s mode hysteresis below.
+# 每次装甲面交接时，原始 EKF 角速度会下降约 1.3--1.8 rad/s，而过零 PLL
+# 仍稳定在约 4.5 rad/s。不要因这种周期性估计波动丢弃可靠的相位锁定；
+# 真正的快慢速切换仍会跨过下方 3.2/2.5 rad/s 的模式迟滞阈值。
 xuc_rotation_rate_disagreement_rad_s: 2.2
 xuc_rotation_speed_step_reset_rad_s: 2.5
 xuc_rotation_rate_agreement_updates: 3
@@ -283,23 +281,23 @@ xuc_gyro_fire_stable_ms: 20.0
 #  · 门开着时频率 0.19~0.5 发/s；门关闭（|ω|<0.30 自动旁路）时 1.04~1.10 发/s；
 #  · 相位速率不可信：有一场 ω 报 +1.5 rad/s，而体相位 44 s 内一直停在
 #    +55~+62°（换一面被 ±90° 拉回一次，净推进≈0），据此外推的弹着相位
-#    落在 fold 边界（|e| 中位 33.8°），门 90% 的时间是关的；
+#    落在折叠边界（|e| 中位数 33.8°），门 90% 的时间是关闭的；
 #  · 唯一支持它的证据只有 10-19 23:38 那一场（靶心:中轴≈4:1），而那一场同时
 #    还带着 650d53d 的整车几何 + 方向性选板，收益无法单独归给相位门。
 # 重新启用的前提：把"换面时相位锚点被拉回"这件事修好（让净推进与逐帧转速一致）。
 xuc_fire_phase_window_deg: 0.0
 # 平均角速度的窗口长度；台架匀速，2.5 s 足够把 ω 抖动平均掉。
 xuc_fire_phase_rate_window_ms: 2500.0
-# Fixed targets keep xuc_fire_yaw_tolerance_deg and the 350 ms stable gate.
-# Gyro mode keeps the current-frame pixel error only as a broad visibility
-# guard; the exact shot instant is selected by the physical phase event clock.
+# 固定目标仍使用 xuc_fire_yaw_tolerance_deg 和 350 ms 稳定判定。
+# 陀螺模式仅将当前帧像素误差作为宽松的可见性保护条件；
+# 具体开火时刻由物理相位事件时钟确定。
 xuc_gyro_predicted_fire_enabled: true
-# High-speed rotation must not fall back to an instantaneous yaw-error shot
-# while the physical phase event clock is unlocked.  This prevents event=0,
-# cycle=-1 rounds such as shots 1-20 in the 2026-09-11 23:34 field log.
+# 物理相位事件时钟未锁定时，高速旋转不得退回到按瞬时偏航误差开火。
+# 这样可避免出现 2026-09-11 23:34 现场日志中第 1 至 20 发那样
+# event=0、cycle=-1 的弹次。
 # 2026-10-20 定：高速靶是最终目标，本键置 false —— 事件钟 interval_safe 不成立时
 # 退回直接门控，否则高速档（ω≈4.5 rad/s）整场 0 发。对照实测：同一转速下带
-# fallback 的两场为 0.85 / 0.56 发/s，不带则 0 发。
+# 启用回退的两场为 0.85 / 0.56 发/s，未启用时为 0 发。
 xuc_gyro_require_event_lock_for_fire: false
 # 直接门控的预测偏航容差。center_follow 下瞄准点超前量 ≤ r/d ≈ 3.9°，1.5° 会把
 # 大部分帧挡在门外，放 3.0° 让直接门控真正接管。
@@ -310,11 +308,11 @@ xuc_gyro_fire_min_consecutive_frames: 2
 # 候选窗口迟滞：门控抖动连续 N 帧（≈N/60 s）仍保留候选窗口，超过才复位。
 # 相位窗一次只开 0.2 s 量级，单帧抖动就清零重来会把开火机会按帧数乘性削掉
 # （2026-10-20 实测：22 s 内 13 次候选启动 / 13 次复位，只成 2 发）。
-# 0 = 旧行为（单帧即复位），便于 A/B。
+# 0 = 旧行为（单帧即复位），便于对照测试。
 xuc_fire_candidate_hold_frames: 3
-# The lower board starts each new feed about 0.59 s after the previous feed stops
-# (2026-09-12 log, 124 matched shots). Waiting 0.55 s here avoids stale queued
-# commands while preserving the lower board's actual maximum repeat cadence.
+# 下位机在上一次拨弹停止约 0.59 s 后开始下一次拨弹
+# （2026-09-12 日志，共匹配 124 发）。此处等待 0.55 s 可避免队列中的命令过期，
+# 同时保留下位机实际支持的最高重复频率。
 xuc_feeder_active_rpm_threshold: 300.0
 xuc_gyro_post_feed_recovery_ms: 550.0
 # 开火节奏回退间隔（毫秒）。0 = 保持原“依赖拨弹遥测”模式；>0 = 不依赖遥测，
@@ -327,33 +325,35 @@ xuc_gyro_post_feed_recovery_ms: 550.0
 # 拉长到 1.5 s 后每发清晰可辨（首发不受影响，since_last_shot 初值为无穷大）。
 # 2026-10-18：配合弹着相位门改为 250 ms（拨弹起转→停转实测中位 111~120 ms，
 # 250 ms 留有余量；每发还要多等 min_consecutive_frames 2 帧 ≈ 40~80 ms）。
-xuc_fire_cadence_fallback_ms: 700
+xuc_fire_cadence_fallback_ms: 250
 # 开火脉冲保持时长（毫秒）。0 = 关闭（单帧脉冲，原行为）。
 # >0 时，开火上升沿后把 shoot 维持该时长，使下位机 AUTO 档（速度模式）拨弹轮
 # 获得确定性转动时间。实测单帧约 10ms 不足，一颗弹常需 3~4 次脉冲才能推入入口。
 # 拨弹完成约需 40~180ms，建议从 120~150ms 起步，按实际出弹情况微调。
 # 2026-10-15 现场调参中（130ms）。
-# 2026-10-20 现场 A/B（目标：一次拨弹打出一颗弹）：
+# 2026-10-20 现场对比测试（目标：一次拨弹打出一颗弹）：
 #  40 ms → 运转 80 ms、推进角中位 315°、离散 4.9~6.9×（一颗弹常需 2~3 次触发）
 #  ~80 ms → 运转 160~175 ms、推进角中位 404~526°、离散 3.1~4.0×（明显收窄）
 # 现测 120 ms；130 ms 历史上出现过供料卡顿，再往上加要盯双发/卡弹。
-xuc_shoot_hold_ms: 120.0
-# At ~5 rad/s and 60 FPS the same armor advances ~5 deg/frame; a four-armor
-# identity switch is ~90 deg. Restart the two-frame window on a large phase jump.
+# 2026-10-21 定：电控把 AUTO 档改为「收到 shoot 上升沿就拨一颗，保持 1 不重复拨弹」，
+# 保持时长从此不影响供弹；120 ms 内持续 shoot=1 只会让边沿判定更脆弱，故置 0。
+xuc_shoot_hold_ms: 0.0
+# 角速度约为 5 rad/s、帧率为 60 FPS 时，同一装甲板每帧前进约 5°；
+# 四块装甲板之间的身份切换约为 90°。相位发生较大跳变时，重新开始两帧判定窗口。
 xuc_gyro_candidate_max_phase_step_deg: 20.0
 xuc_direct_yaw_guard: true              # 当前以稳定测量为主；保留预测接口供 EKF 调稳后启用
 xuc_direct_yaw_boresight_correction_deg: -2.65  # 2026-10-20 重标内参后现场重拉（旧值 -0.5 是按旧 K 调的）
 xuc_direct_yaw_impact_correction_deg: 0.0  # 已重置：旧值是按旧外参调出来的
-xuc_yaw_tracking_pi_enabled: false      # disabled: field jitter was model/lead switching; keep one dynamic controller
-xuc_yaw_tracking_kp: 0.0                # disable fast outer proportional loop; lower board already owns position P
-xuc_yaw_tracking_ki_per_s: 0.18         # slow static-bias learner; about 0.2 deg/s at the observed residual
+xuc_yaw_tracking_pi_enabled: false      # 已禁用：现场抖动来自模型/超前量切换；保留单一动态控制器
+xuc_yaw_tracking_kp: 0.0                # 禁用快速外层比例环；位置比例控制已由下位机负责
+xuc_yaw_tracking_ki_per_s: 0.18         # 缓慢学习静态偏差；按观测到的残差约为 0.2 度/秒
 xuc_yaw_tracking_integral_limit_deg: 0.8
-xuc_yaw_tracking_output_limit_deg: 0.8  # cannot excite the inner loop or replace ESKF/phase lead
-xuc_yaw_tracking_integrate_error_limit_deg: 1.5  # reject face hand-over and prediction jumps
-xuc_yaw_tracking_arm_dwell_ms: 600.0    # start from zero only after mode=1 and yaw_armed=1 are stable
+xuc_yaw_tracking_output_limit_deg: 0.8  # 不得激发内环，也不得取代 ESKF/相位超前量
+xuc_yaw_tracking_integrate_error_limit_deg: 1.5  # 排除装甲面交接和预测跳变
+xuc_yaw_tracking_arm_dwell_ms: 600.0    # 仅在 mode=1 且 yaw_armed=1 稳定后从零开始
 xuc_max_prediction_lead_rad: 0.10472     # 移动靶最多超前6°；保留测量守卫，禁止EKF发散越界
 # 车体中心跟随（center_follow）只跟旋转中心，用于消除换面跳变。
-# 注意：车体绕自身中心自转 ⇒ 中心不平移 ⇒ **不欠 omega*flight_time 的提前量**
+# 注意：车体绕自身中心自转 ⇒ 中心不平移 ⇒ **不需要补偿 omega*flight_time 提前量**
 # （装甲板相对中心只偏 atan(r/d)≈2.3°，而 omega*flight_time 约 21°，大一个数量级，
 #  直接加会把云台推出装甲板）。真正会滞后的是"中心估计"本身：它是短窗拟合值。
 # 开启后按中心自身横向速度前推飞行时间再取方位差，包络远小于 atan(r/d)。
@@ -364,41 +364,39 @@ xuc_center_follow_lead_min_center_speed_mps: 0.30
 # 修正包络（度）。必须远小于 atan(r/d)≈3.3°（r=0.26,d=4.5），否则会把云台推离装甲板。
 # C++ 侧硬钳 5°。
 xuc_center_follow_lead_max_deg: 3.0
-xuc_direct_yaw_filter_tau_ms: 60.0       # suppress face/model hand-over command oscillation
+xuc_direct_yaw_filter_tau_ms: 60.0       # 抑制装甲面/模型交接时的指令振荡
 xuc_direct_yaw_hold_ms: 300.0            # 移动靶短丢帧继续使用6°内有界预测；更长丢失停控
-xuc_direct_yaw_max_rate_dps: 90.0        # bounded command slew prevents sudden gimbal reversal
-xuc_final_yaw_command_max_rate_dps: 30.0 # damp full ESKF lead and armor/vehicle model hand-over
+xuc_direct_yaw_max_rate_dps: 90.0        # 限制指令变化速率，防止云台突然反转
+xuc_final_yaw_command_max_rate_dps: 30.0 # 抑制完整 ESKF 超前量及装甲板/车体模型交接带来的变化
 xuc_direct_pitch_guard: true             # 使用装甲板像素纵向误差 + 当前IMU生成绝对 Pitch 目标
-xuc_direct_pitch_filter_tau_ms: 60.0     # retain post-shot noise damping without the observed long vertical lag
+xuc_direct_pitch_filter_tau_ms: 60.0     # 保留射击后的噪声抑制，同时避免已观察到的长时间垂直滞后
 xuc_direct_pitch_hold_ms: 180.0          # 已保存双轴验收值：短丢帧保持
-xuc_direct_pitch_max_rate_dps: 45.0      # midpoint between the stable-but-slow 25 and previously validated 80 deg/s
-xuc_direct_pitch_error_gain: 1.35        # recover steady-state authority; below the previously validated 1.65 gain
+xuc_direct_pitch_max_rate_dps: 45.0      # 介于稳定但较慢的 25 与此前验证过的 80 度/秒之间
+xuc_direct_pitch_error_gain: 1.35        # 恢复稳态控制能力；低于此前验证过的 1.65 增益
 xuc_projectile_speed_mps: 18.5        # 2026-10-20 现场值（小电脑同步）；2026-10-16 实测（测速文件）：摩擦轮降速后弹速 17.3 m/s；2026-10-18复测：19m/s为0/20，17.3m/s为5/20；因果待更多样本确认
 xuc_ballistic_reference_projectile_speed_mps: 10.0  # 0.91m/17cm实弹基准采集于2500rpm，禁止随当前转速重算
 xuc_ballistic_pitch_enabled: true
 xuc_camera_forward_of_muzzle_m: 0.06     # 实测：相机中心在炮口前方 6 cm
 xuc_camera_above_muzzle_m: 0.04          # 实测：相机中心在炮口上方 4 cm
 xuc_ballistic_reference_camera_range_m: 0.91
-xuc_ballistic_reference_total_drop_m: 0.08639  # physical 10m/s reference; zero fixed boresight bias
+xuc_ballistic_reference_total_drop_m: 0.08639  # 实测 10 m/s 基准；固定瞄准轴偏差设为零
 xuc_ballistic_max_compensation_deg: 20.0    # 低弹速远距离补偿上限；下位机另保留25°/28°双层保护
-xuc_ballistic_pitch_trim_deg: -1.42    # same-side high miss: lower impact about 2.5 cm at 4.6 m
-# Robust shared range for ballistic elevation and gyro time-of-flight.  The
-# rigid-body near-face range is authoritative; raw PnP depth contributes only a
-# bounded 5% correction so oblique plates cannot move the aim by metres.
+xuc_ballistic_pitch_trim_deg: -1.42    # 同侧高弹：在 4.6 m 处将弹着点降低约 2.5 cm
+# 弹道仰角和陀螺飞行时间共用稳健的距离估计。
+# 以刚体近侧装甲面距离为准；原始 PnP 深度最多只提供有界的 5% 修正，
+# 避免倾斜装甲板导致瞄准点偏移数米。
 xuc_range_filter_tau_ms: 80
 xuc_range_filter_max_rate_mps: 6.0
 xuc_range_filter_raw_blend: 0.05
 xuc_range_filter_max_raw_residual_m: 0.40
-# Commands are now issued only near the lower board's physical ready time.  Use
-# the resulting short, repeatable launch path instead of predicting against the
-# 20--746 ms queue delay observed when recovery was disabled.
+# 现在仅在下位机实际就绪时间附近发送命令。使用由此获得的短且可重复的发射过程，
+# 不再针对禁用恢复机制时观察到的 20--746 ms 排队延迟进行预测。
 xuc_event_fire_delay_s: 0.085
 xuc_event_fire_delay_min_ms: 65
 xuc_event_fire_delay_max_ms: 105
-# Observe the feeder threshold in the serial RX thread, learn a fresh session
-# baseline from five matched shots, then compensate only subsequent mechanical
-# drift. The 85 ms calibration is unchanged during warm-up. A median/MAD window,
-# 1.5 ms per-shot slew limit and hard 65--105 ms bounds prevent oscillation.
+# 在串口接收线程中观察拨弹器阈值，以五发匹配数据学习本轮基准，
+# 之后仅补偿机械漂移。预热期间保持 85 ms 标定值不变。
+# 使用中位数/MAD 窗口、每发 1.5 ms 的变化限制和 65--105 ms 硬边界来避免振荡。
 xuc_shot_delay_adaptation_enabled: true
 xuc_shot_delay_reference_ms: 235
 # 2026-10-20：自适应样本从「命令→拨弹起转」改为「命令→拨弹停转（≈出弹）」。
@@ -421,10 +419,9 @@ xuc_shot_delay_outlier_sigma: 3.5
 xuc_shot_delay_outlier_floor_ms: 4
 xuc_shot_delay_95pi_min_half_ms: 8
 xuc_event_flight_time_uncertainty_ms: 5
-# A qualifying frame may wait this long for the exact steady-clock send time.
-# At ~70 FPS a 30 ms lead admits only about two decision frames.  A 50 ms
-# early window gives the qualified event more chances, then sleep_until still
-# sends at the exact same phase deadline.
+# 满足条件的帧最多可等待此时长，以到达精确的稳态时钟发送时刻。
+# 帧率约为 70 FPS 时，提前 30 ms 只包含约两帧决策机会。将提前窗口设为 50 ms，
+# 可增加合格事件的机会；随后仍由 sleep_until 在相同的相位截止时刻发送。
 xuc_event_trigger_window_ms: 50
 xuc_event_send_late_tolerance_ms: 2
 xuc_event_crossing_capture_deg: 20
@@ -432,9 +429,8 @@ xuc_event_crossing_rearm_deg: 12
 xuc_event_min_crossing_separation_ratio: 0.55
 xuc_event_period_min_ms: 120
 xuc_event_period_max_ms: 1200
-# Continuous folded-body-phase PLL. Keep the phase response used when the
-# 154 ms live delay was calibrated; robust residual spread (not its calibrated
-# mean offset) is carried into the hit-width gate.
+# 连续折叠车体相位 PLL。保持为 154 ms 现场延迟标定时使用的相位响应；
+# 命中宽度判定使用稳健的残差离散度，而不是已标定的平均偏移。
 xuc_event_period_ema_alpha: 0.20
 xuc_event_max_period_relative_error: 0.22
 xuc_event_max_period_step_ratio: 0.025
@@ -451,20 +447,18 @@ xuc_event_relock_rejections: 3
 xuc_event_armor_width_m: 0.135
 xuc_event_armor_edge_margin_m: 0.0
 xuc_event_model_phase_uncertainty_deg: 0.7
-# Relax only the conservative phase budget. Lock, face identity and gimbal
-# tracking remain mandatory, so this cannot re-enable event=0/cycle=-1 shots.
-# Field logs show tracking/PLL are healthy but the conservative summed phase
-# budget rejects most otherwise usable faces.  Keep lock and face identity
-# mandatory while allowing a wider physical opportunity window.
+# 仅放宽保守的相位预算。锁定状态、装甲面身份和云台跟踪仍为必需条件，
+# 因此不会重新允许 event=0/cycle=-1 的弹次。
+# 现场日志显示跟踪和 PLL 状态正常，但保守的相位总预算会拒绝大多数原本可用的装甲面。
+# 保持锁定状态和装甲面身份为必需条件，同时适当放宽物理开火窗口。
 xuc_event_phase_grace_deg: 4.0
-# Fire from the directly observed phase clock once its temporal interval is safe.
-# Future-face consistency remains diagnostic, but no longer vetoes an otherwise
-# valid event: field logs show that hand-over ambiguity was the dominant source
-# of missed opportunities.  Event lock, fresh vision, pitch, gimbal tracking,
-# one-shot-per-cycle and feeder recovery gates remain mandatory.
+# 直接观测到的相位时钟进入安全时间区间后即可开火。
+# 未来装甲面一致性仍用于诊断，但不再否决其他条件均有效的事件：现场日志显示，
+# 装甲面交接歧义是错失机会的主要原因。事件锁定、新鲜视觉数据、俯仰、云台跟踪、
+# 每周期只开火一次以及拨弹器恢复等门控条件仍然必须满足。
 xuc_event_require_face_consistency: false
-# Commit the future physical armor face for each event cycle, then hand over to
-# the next face. A shot also requires the gimbal to be following its command.
+# 为每个事件周期锁定未来实际装甲面，之后再交接到下一块装甲面。
+# 开火还要求云台正在跟随其指令。
 xuc_event_face_max_alignment_deg: 15.0
 xuc_event_gimbal_tracking_tolerance_deg: 4.0
 xuc_shot_feedback_timeout_ms: 800
