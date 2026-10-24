@@ -152,7 +152,7 @@ decision_speed: 0.8
 # 的耗时——弹丸在拨弹轮转到中途时就被摩擦轮咬住甩出，出膛明显早于步进到位。
 # 因此 0.2 这个量级是对的，不要再按「步进耗时」去推算延时。
 # 现场原始值：0.2（单发改造后；早期为 0.085 → 0.1 → 0.195/0.205）。
-high_speed_delay_time: 0.167
+high_speed_delay_time: 0.170
 low_speed_delay_time: 0.165
 
 actuation_delay_ms: 0
@@ -341,7 +341,7 @@ xuc_gyro_post_feed_recovery_ms: 0
 # 不能再用旧的 250 ms 或 feeder_stop 日志作为完整拨弹已结束的依据。
 # 这里只限制最小间隔，到期仍须通过当前帧候选与择时门控，不定时补发旧请求。
 # 完整拨弹时间只约束重复请求，不替代实弹标定的预测延迟 0.17 s。
-xuc_fire_cadence_fallback_ms: 420
+xuc_fire_cadence_fallback_ms: 1100
 # 每个模型累计成功发送15次请求后完整重建；0关闭。计的是请求，不是实测出膛数。
 # 重建期间禁火，待tracking与滤波可信后恢复；保留上次请求时刻并重新检查当前资格。
 xuc_model_rebuild_after_requests: 15
