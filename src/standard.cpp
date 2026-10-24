@@ -23,6 +23,7 @@
 #include "io/xuc.hpp"
 #include "tasks/auto_aim/aimer.hpp"
 #include "tasks/auto_aim/center_follow_lead.hpp"
+#include "tasks/auto_aim/fire_window.hpp"
 #include "tasks/auto_aim/gyro_face_selector.hpp"
 #include "tasks/auto_aim/gyro_phase_scheduler.hpp"
 #include "tasks/auto_aim/robust_range_filter.hpp"
@@ -43,10 +44,9 @@
 
 using namespace std::chrono;
 
-// 开火判据（2026-10-19 借鉴 Fujian_AutoAim 26.10.18 的 RotationFireWindow）：
-// 不用"误差小于某个窗"，而是用最近两帧的实测弹着偏航误差外推下一帧，
-// 在哪一帧误差到达谷底（下一步会变差）就那一帧开火。实现见下面 fire_candidate 之后的
-// 【误差拐点开火】一段；这里不再保留状态机结构体，选板连续性由 stable-window 负责。
+// 相位门关闭时使用直接误差窗、候选帧积累及有界逐帧择时。
+// yaw 误差拐点不是无限等待的硬门；到期仍须通过当前帧全部有效性门控。
+// 资格判定与最终发送共用 FireWindowPolicy，避免直接路径又被事件等待撤销。
 
 const std::string keys =
   "{help h usage ? |      | 输出命令行参数说明}"
@@ -499,6 +499,17 @@ int main(int argc, char * argv[])
       ? std::clamp(
           integration_yaml["xuc_gyro_fire_min_consecutive_frames"].as<int>(), 1, 10)
       : 2;
+  // After the existing frame qualification, prefer a later/better sample for
+  // at most this budget. Zero restores immediate qualification. This does not
+  // change the calibrated prediction delay, phase gate or minimum cadence.
+  const auto_aim::FireWindowSelectionConfig xuc_fire_window_selection{
+    integration_yaml["xuc_gyro_fire_selection_max_wait_ms"]
+      ? std::clamp(
+          integration_yaml["xuc_gyro_fire_selection_max_wait_ms"].as<double>(), 0.0, 50.0) / 1000.0
+      : 0.0,
+    (integration_yaml["xuc_gyro_fire_selection_near_deg"]
+       ? std::clamp(integration_yaml["xuc_gyro_fire_selection_near_deg"].as<double>(), 0.0, 3.0)
+       : 0.5) * M_PI / 180.0};
   // 【候选窗口迟滞】相位门一次只开 0.2 s 左右（ω≈1.5 rad/s、窗口 10°），而候选窗
   // 口要求“所有门连续两帧同时开”。任何一帧抖动都会让窗口归零重来，等效把可开火
   // 机会按帧数乘性削掉。2026-10-20 实测：22 s 内 13 次候选窗口启动、13 次复位，
@@ -941,6 +952,7 @@ int main(int argc, char * argv[])
   int xuc_fire_candidate_miss = 0;
   double xuc_fire_candidate_face_yaw_rad = INFINITY;
   std::chrono::steady_clock::time_point xuc_fire_candidate_since;
+  auto_aim::FireWindowSelector xuc_fire_window_selector;
   bool xuc_one_face_armed = true;
   bool xuc_gyro_center_follow_logged = false;
   bool xuc_gyro_center_memory_valid = false;
@@ -1553,8 +1565,14 @@ int main(int argc, char * argv[])
     const double native_predicted_yaw = command.yaw;
     double gyro_predicted_impact_yaw_error_rad = INFINITY;
     bool gyro_predicted_impact_yaw_valid = false;
+    // 2026-10-23：长等待被拒绝时，撤销本帧尚未发送的面名额，避免空耗事件。
+    bool shot_qualification_committed = false;
+    bool shot_qualification_was_armed = false;
+    std::int64_t shot_qualification_previous_cycle = -1;
     bool gyro_event_schedule_valid = false;
     bool gyro_event_interval_safe = false;
+    auto_aim::FireWindowPolicy fire_window_policy;
+    auto_aim::FireWindowDecision fire_window_decision;
     std::int64_t gyro_event_hit_cycle = -1;
     double gyro_event_lead_error_s = INFINITY;
     double gyro_event_face_period_s = NAN;
@@ -2316,8 +2334,11 @@ int main(int argc, char * argv[])
       // require_event_lock_for_fire 决定是否退回直接门控（该键已置 false）。
       // 对照实测：同一转速（−4.5~−4.7 rad/s）下，带本 fallback 的
       // 21:45:13 / 21:46:53 两场分别是 0.85 / 0.56 发/s。
-      const bool event_gate_authoritative =
-        gyro_event_schedule_valid && gyro_event_interval_safe;
+      // 事件时钟还必须由相位门显式启用；phase_window=0 时使用直接误差窗。
+      fire_window_policy = auto_aim::make_fire_window_policy(
+        impact_phase_gate_active, gyro_event_schedule_valid, gyro_event_interval_safe,
+        xuc_gyro_fire_min_consecutive_frames);
+      const bool event_gate_authoritative = fire_window_policy.uses_event_clock();
       const bool yaw_gate_open = gyro_predicted_fire_active
         ? (event_gate_authoritative
              ? gyro_event_gate_open
@@ -2325,18 +2346,17 @@ int main(int argc, char * argv[])
         : (vehicle_predicted_fire_active
              ? gyro_yaw_gate_native_open
              : stationary_yaw_gate_open);
-      const bool fire_candidate = command.control &&
-        auto_mode_active &&
-        convergence_gate_open && one_face_gate_open && motion_transition_gate_open &&
+      const bool fire_context_valid = command.control && auto_mode_active &&
+        convergence_gate_open && motion_transition_gate_open &&
+        direct_yaw_measurement_fresh && direct_pitch_measurement_fresh &&
+        (!xuc.enabled() || (xuc.rx_valid() && xuc.control_ready()));
+      const bool fire_candidate = fire_context_valid && one_face_gate_open &&
         feedback_cadence_gate_open &&
         impact_phase_gate_open &&
-        direct_yaw_measurement_fresh && direct_pitch_measurement_fresh &&
         yaw_gate_open &&
         std::abs(direct_pitch_pixel_error_rad) <= xuc_fire_pitch_tolerance_rad;
-      // 【误差拐点开火】(2026-10-19 借鉴 Fujian_AutoAim 26.10.18)
-      // 用最近两帧的实测弹着偏航误差外推下一帧：next = e + (e - e_prev)。
-      // 若当前误差不大于外推值（误差已到谷底、下一步会变差），或下一帧会超出容差，
-      // 本帧就是这一窗口里最好的开火时刻。不建模型、不需要准确的 ω。
+      // 误差拐点仅作诊断：next = e + (e - e_prev)。它不再否决已满足
+      // 误差窗和候选帧数的请求，日志用 better_gate=0 明确区分。
       const double pred_err_rad = gyro_predicted_impact_yaw_error_rad;
       double next_pred_err_rad = NAN;
       bool current_frame_is_better = false;
@@ -2389,7 +2409,7 @@ int main(int argc, char * argv[])
           "gimbal_err_deg={:.2f} due_ms={:+.1f} window_deg={:.2f} "
           "worst_deg={:.2f} combined_deg={:.2f} "
           "yawerr_deg={:.2f} pitcherr_deg={:.2f} "
-          "better={} cand={} miss={} "
+          "better={} better_gate=0 timing={} need={} cand={} miss={} "
           "phmin={} next_phase_deg={:+.2f} "
           "phase_signed_deg={:+.2f} horizon_ms={:.1f} body_phase_deg={:+.2f} "
           "center_yaw_deg={:+.2f} ekf_omega={:+.2f}",
@@ -2416,6 +2436,7 @@ int main(int argc, char * argv[])
           direct_yaw_pixel_error_rad * 180.0 / M_PI,
           direct_pitch_pixel_error_rad * 180.0 / M_PI,
           current_frame_is_better ? 1 : 0,
+          fire_window_policy.name(), fire_window_policy.required_frames,
           xuc_fire_candidate_frames, xuc_fire_candidate_miss,
           phase_error_at_minimum ? 1 : 0,
           next_impact_phase_rad * 180.0 / M_PI,
@@ -2431,7 +2452,8 @@ int main(int argc, char * argv[])
       }
       if (fire_candidate) {
         xuc_fire_candidate_miss = 0;
-        const double candidate_face_yaw_rad = gyro_event_face_valid
+        const double candidate_face_yaw_rad =
+          fire_window_policy.uses_event_clock() && gyro_event_face_valid
           ? static_cast<double>(gyro_event_face_id) * M_PI / 2.0
           : aimer.debug_aim_point.xyza[3];
         if (predictive_fire_active && xuc_fire_candidate_active &&
@@ -2447,6 +2469,7 @@ int main(int argc, char * argv[])
             xuc_fire_candidate_active = false;
             xuc_fire_ready_logged = false;
             xuc_fire_candidate_frames = 0;
+            xuc_fire_window_selector.reset();
           }
         }
         if (!xuc_fire_candidate_active) {
@@ -2463,39 +2486,42 @@ int main(int argc, char * argv[])
         const double stable_time =
           std::chrono::duration<double>(t - xuc_fire_candidate_since).count();
         if (predictive_fire_active) {
-          // Predictive fire always uses a one-frame pulse. High-speed phase mode
-          // allows one pulse per physical face event; low/medium speed is
-          // re-armed by completed feeder feedback, enabling controlled repeated
-          // fire without turning a satisfied gate into a long shoot level.
-          // Event mode: the dynamic-lead gate is a short time window (~1 frame
-          // at high omega), so a single qualifying frame is sufficient to fire.
-          // Native fallback (no event omega/tracker) keeps the 2-frame rule.
-          const int ev_need_frames = gyro_event_schedule_valid
-            ? 1
-            : xuc_gyro_fire_min_consecutive_frames;
-          // 【相位门生效时用"相位误差最小"选时刻，不再叠加 yaw 误差拐点】
-          // (2026-10-20 现场数据) current_frame_is_better 判的是**预测弹着 yaw
-          // 误差**（±3° 量级的独立振荡）的局部极小，而且要求它恰好落在相位窗里：
-          // 今天 74 次候选只成 13 发、间隔中位 3.66 s（≈3.6 个面），而 10-19 同一
-          // 靶、同一套相位门上是 0.91 s/发。相位门本身已经把开火时刻钉在"弹丸到达
-          // 瞬间最近的装甲板压在视线中心"，yaw 拐点是"跟板瞄准"时代替相位的代理
-          // 量，两者同时要求属于重复筛选。
-          // 但也不能改成"窗口一开就打"：±10° 窗口在 r=0.27 m 上等于 ±4.7 cm，
-          // 从窗口边缘开火会把弹着系统性推到板前缘（正是用户报的现象）。
-          // ⇒ 相位门生效时只在**内半窗**（|e| ≤ 窗口/2 = 5° ≈ ±2.4 cm，且相位误差
-          //   已到谷底或即将出内半窗）开火：每一面必有一次机会，频率回到 ~1 发/面
-          //   （≈1 发/秒），系统性边缘偏差同时减半。相位门不生效（静止/低速，
-          //   走各自的门）时保留原有 yaw 拐点规则。
-          const bool impact_moment_selected_by_phase = impact_phase_gate_active;
+          // Keep the explicit phase/event path unchanged. For centre-follow
+          // native windows, four-frame eligibility is followed by a bounded,
+          // framewise preference; no hard turning-point veto or blocking wait.
           const bool phase_moment_ready = impact_phase_gate_active &&
             std::isfinite(shot_diag_signed_phase_rad) &&
             std::abs(shot_diag_signed_phase_rad) <= 0.5 * xuc_fire_phase_window_rad &&
             phase_error_at_minimum;
-          command.shoot =
-            (xuc_fire_candidate_frames >= ev_need_frames) && !xuc_fire_ready_logged &&
-            (impact_moment_selected_by_phase ? phase_moment_ready
-                                             : current_frame_is_better);
+          command.shoot = fire_window_policy.ready(
+            fire_candidate, xuc_fire_candidate_frames, xuc_fire_ready_logged,
+            phase_moment_ready);
+          if (gyro_center_follow_active &&
+              fire_window_policy.timing == auto_aim::FireTiming::stable_window) {
+            const double selection_now_s = std::chrono::duration<double>(
+              std::chrono::steady_clock::now().time_since_epoch()).count();
+            // Use the existing native yaw-error/trim reference. Its zero is a
+            // timing preference, not a new physical boresight calibration.
+            fire_window_decision = xuc_fire_window_selector.update(
+              fire_candidate,
+              xuc_fire_candidate_frames >= fire_window_policy.required_frames,
+              xuc_fire_ready_logged, pred_err_rad, selection_now_s,
+              xuc_fire_window_selection);
+            command.shoot = command.shoot && fire_window_decision.ready;
+            if (fire_window_decision.started && !fire_window_decision.ready) {
+              tools::logger()->info(
+                "[FIREWINDOW] selecting budget_ms={:.1f} near_deg={:.2f} "
+                "yawerr_deg={:+.2f} next_err_deg={:+.2f}",
+                xuc_fire_window_selection.max_wait_s * 1000.0,
+                xuc_fire_window_selection.near_error_rad * 180.0 / M_PI,
+                pred_err_rad * 180.0 / M_PI,
+                fire_window_decision.next_error_rad * 180.0 / M_PI);
+            }
+          } else {
+            xuc_fire_window_selector.reset();
+          }
         } else {
+          xuc_fire_window_selector.reset();
           const double required_stable_s = one_face_policy_active
             ? xuc_gyro_fire_stable_s
             : xuc_fire_stable_s;
@@ -2514,7 +2540,8 @@ int main(int argc, char * argv[])
             "face_error={:.2f}deg committed_face={} face_align={:.2f}deg "
             "phase_unc={:.2f}deg gimbal_err={:.2f}deg omega={:+.3f}rad_s armed={} "
             "phase_win={:.0f}deg phasegate_on={} phase_err={:.2f}deg "
-            "phase_rate={:+.3f} next_err={:+.2f}deg better={} "
+            "phase_rate={:+.3f} next_err={:+.2f}deg better={} better_gate=0 timing={} "
+            "select={} select_wait_ms={:.1f} select_next_err_deg={:+.2f} "
             "whole_ekf={} trace_face={}",
             stable_time * 1000.0,
             xuc_fire_candidate_frames,
@@ -2529,7 +2556,13 @@ int main(int argc, char * argv[])
             xuc_fire_phase_window_rad * 180.0 / M_PI, impact_phase_gate_active,
             impact_phase_err_rad * 180.0 / M_PI, body_phase_rate_window,
             next_pred_err_rad * 180.0 / M_PI, current_frame_is_better,
+            fire_window_policy.name(),
+            fire_window_decision.reason, fire_window_decision.waited_s * 1000.0,
+            fire_window_decision.next_error_rad * 180.0 / M_PI,
             native_fire_prediction.whole_ekf_geometry, native_fire_prediction.face_id);
+          shot_qualification_committed = true;
+          shot_qualification_was_armed = xuc_one_face_armed;
+          shot_qualification_previous_cycle = event_last_fired_cycle;
           xuc_fire_ready_logged = true;
           if (one_face_policy_active) {
             xuc_one_face_armed = false;
@@ -2539,11 +2572,14 @@ int main(int argc, char * argv[])
           }
         }
       } else {
+        // Never carry a derivative or an expired selection budget across a
+        // closed gate, even when the original candidate-frame hysteresis holds.
+        xuc_fire_window_selector.reset();
         // 迟滞：门控抖动单帧不再立刻丢弃候选窗口。相位窗本身一次只开
         // 0.2 s 量级，若每帧抖动都清零重来，实际可开火机会会按帧数乘性减少
         // （2026-10-20 实测 13 次候选只成 2 发）。连续 miss 超过上限才复位。
         ++xuc_fire_candidate_miss;
-        if (xuc_fire_candidate_active &&
+        if (fire_context_valid && xuc_fire_candidate_active &&
             xuc_fire_candidate_miss <= xuc_fire_candidate_hold_frames) {
           command.shoot = false;
         } else {
@@ -2560,6 +2596,7 @@ int main(int argc, char * argv[])
         }
       }
     } else {
+      xuc_fire_window_selector.reset();
       command.shoot = native_shoot;
       if (measurement_fallback) command.shoot = false;
     }
@@ -2744,10 +2781,14 @@ int main(int argc, char * argv[])
       }
     }
 
-    // For an event-qualified gyro shot, wait for the exact steady-clock due
-    // instant instead of quantizing the request to the next camera frame.  A
-    // sample that was already late before this deliberate wait is discarded;
-    // the small tolerance only covers OS wake-up jitter after sleep_until().
+    // 2026-10-23：限制主循环的事件等待，避免下一帧 dt > 100 ms 被 Tracker 判失锁。
+    // 预算从图像时间 t 起算，包含本帧已有处理耗时；最多 50 ms，且不扩大原触发窗。
+    // 超预算只撤销本帧请求，由下一帧重新判断；不提前发送，不保留陈旧命令补发。
+    // 这是有界短等待，不是异步发送；OS 调度停顿仍可能超出预算。
+    const auto vision_wait_budget = std::chrono::duration_cast<
+      std::chrono::steady_clock::duration>(
+        std::chrono::duration<double>(std::min(xuc_event_trigger_window_s, 0.05)));
+    const auto vision_wait_deadline = t + vision_wait_budget;
     double gyro_event_send_lateness_ms = NAN;
     if (xuc.enabled() && command.shoot) {
       if (xuc.mode() != static_cast<uint8_t>(io::Mode::auto_aim)) {
@@ -2755,7 +2796,7 @@ int main(int argc, char * argv[])
           "[SHOT] request suppressed because lower-board mode={} is not AUTO",
           static_cast<int>(xuc.mode()));
         command.shoot = false;
-      } else if (gyro_event_schedule_valid) {
+      } else if (fire_window_policy.uses_event_clock()) {
         const auto wait_started = std::chrono::steady_clock::now();
         if (wait_started > gyro_event_command_due_time) {
           gyro_event_send_lateness_ms = std::chrono::duration<double, std::milli>(
@@ -2763,6 +2804,21 @@ int main(int argc, char * argv[])
           tools::logger()->warn(
             "[GYROSCHED] cycle={} missed before send by {:.2f} ms; shot discarded",
             gyro_event_hit_cycle, gyro_event_send_lateness_ms);
+          command.shoot = false;
+        } else if (gyro_event_command_due_time > vision_wait_deadline) {
+          // 保留跟踪循环的连续性。不能把几十至几百毫秒后的事件提前到本帧发出。
+          static auto last_wait_deferred_log = std::chrono::steady_clock::time_point{};
+          if (wait_started - last_wait_deferred_log >= std::chrono::seconds(1)) {
+            tools::logger()->info(
+              "[GYROSCHED] cycle={} wait deferred for vision: remaining_ms={:.1f} "
+              "frame_age_ms={:.1f} frame_budget_ms={:.1f}",
+              gyro_event_hit_cycle,
+              std::chrono::duration<double, std::milli>(
+                gyro_event_command_due_time - wait_started).count(),
+              std::chrono::duration<double, std::milli>(wait_started - t).count(),
+              std::chrono::duration<double, std::milli>(vision_wait_budget).count());
+            last_wait_deferred_log = wait_started;
+          }
           command.shoot = false;
         } else {
           std::this_thread::sleep_until(gyro_event_command_due_time);
@@ -2778,6 +2834,21 @@ int main(int argc, char * argv[])
           }
         }
       }
+    }
+
+    // 短等待后重读接收线程的最新状态；退出 AUTO/反馈失效不得继续发送旧请求。
+    if (xuc.enabled() && command.shoot &&
+        (!xuc.rx_valid() || !xuc.control_ready() ||
+         xuc.mode() != static_cast<uint8_t>(io::Mode::auto_aim))) {
+      tools::logger()->warn("[GYROSCHED] request cancelled after feedback/mode changed");
+      command.shoot = false;
+    }
+    // 2026-10-23：未发送不是已开火。保留候选积累，恢复本帧资格判定前的面名额。
+    if (xuc.enabled() && shot_qualification_committed && !command.shoot) {
+      xuc_fire_window_selector.reset();
+      xuc_fire_ready_logged = false;
+      xuc_one_face_armed = shot_qualification_was_armed;
+      event_last_fired_cycle = shot_qualification_previous_cycle;
     }
 
     // Attach a software shot id to every pulse actually sent.  The next feeder
@@ -2808,7 +2879,7 @@ int main(int argc, char * argv[])
       const double processing_age_ms =
         std::chrono::duration<double, std::milli>(issue_time - t).count();
       tools::logger()->info(
-        "[SHOT] id={} issue mode={} gyro={} event={} cycle={} "
+        "[SHOT] id={} issue mode={} gyro={} event={} schedule={} timing={} cycle={} "
         "processing_age_ms={:.1f} due_error_ms={:+.2f} "
         "period_ms={:.1f} window_deg={:.2f} worst_deg={:.2f} combined_deg={:.2f} "
         "face={} face_align_deg={:.2f} phase_unc_deg={:.2f} gimbal_err_deg={:.2f} "
@@ -2816,9 +2887,11 @@ int main(int argc, char * argv[])
         "body_phase_deg={:+.2f} center_yaw_deg={:+.2f} "
         "cmd_yaw_deg={:+.2f} gimbal_yaw_deg={:+.2f} "
         "cmd_pitch_deg={:+.2f} gimbal_pitch_deg={:+.2f} "
-        "range_m={:.3f} projectile_speed_mps={:.2f}",
+        "range_m={:.3f} projectile_speed_mps={:.2f} "
+        "select={} select_wait_ms={:.1f} select_next_err_deg={:+.2f}",
         shot_id, static_cast<int>(xuc.mode()), gyro_model_fresh ? 1 : 0,
-        gyro_event_schedule_valid ? 1 : 0, gyro_event_hit_cycle,
+        fire_window_policy.uses_event_clock() ? 1 : 0,
+        gyro_event_schedule_valid ? 1 : 0, fire_window_policy.name(), gyro_event_hit_cycle,
         processing_age_ms, gyro_event_send_lateness_ms,
         gyro_event_face_period_s * 1000.0,
         gyro_event_half_window_rad * 180.0 / M_PI,
@@ -2833,7 +2906,10 @@ int main(int argc, char * argv[])
         gyro_body_phase_rad * 180.0 / M_PI, gyro_center_yaw * 180.0 / M_PI,
         command.yaw * 180.0 / M_PI, ypr[0] * 180.0 / M_PI,
         command.pitch * 180.0 / M_PI, ypr[1] * 180.0 / M_PI,
-        robust_target_range_m, xuc_projectile_speed_mps);
+        robust_target_range_m, xuc_projectile_speed_mps,
+        fire_window_decision.reason, fire_window_decision.waited_s * 1000.0,
+        fire_window_decision.next_error_rad * 180.0 / M_PI);
+      xuc_fire_window_selector.reset();
     }
 
     // 发送命令到 PlotJuggler（显示实际发送的值）

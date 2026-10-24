@@ -267,6 +267,7 @@ add_executable(
   center_follow_lead_test
   tasks/auto_aim/center_follow_lead_test.cpp)
 add_executable(shot_delay_adapter_test tasks/auto_aim/shot_delay_adapter_test.cpp)
+add_executable(fire_window_test tasks/auto_aim/fire_window_test.cpp)
 add_executable(
   adaptive_corner_refiner_test
   tasks/auto_aim/adaptive_corner_refiner_test.cpp
@@ -289,6 +290,7 @@ foreach(estimator_test
     robust_range_filter_test
     center_follow_lead_test
     shot_delay_adapter_test
+    fire_window_test
     adaptive_corner_refiner_test
     ekf_consistency_test
     iterated_ekf_test)

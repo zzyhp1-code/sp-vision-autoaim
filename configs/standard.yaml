@@ -146,8 +146,15 @@ decision_speed: 0.8
 # 步进：10 ms ≈ 0.9° ≈ 4 mm（板上）。若跑到后缘就往上加 0.02~0.03；
 # 若仍在前缘就往下减 0.02。若确认实弹初速是 17.3 m/s（配置当前按 19.8 算
 # 飞行 0.209 s），飞行时间还差 0.03 s，量等效延迟可取到 0.13。
-high_speed_delay_time: 0.235
-low_speed_delay_time: 0.235
+#
+# ⚠️ 2026-10-23 失败尝试（勿重蹈）：曾据电控「一步耗时 0.48 s」把本键从 0.2 改到 0.50，
+# 结果弹着严重偏离装甲板。原因是 0.48 s 是「步进动作完成」的耗时，不是「弹丸出膛」
+# 的耗时——弹丸在拨弹轮转到中途时就被摩擦轮咬住甩出，出膛明显早于步进到位。
+# 因此 0.2 这个量级是对的，不要再按「步进耗时」去推算延时。
+# 现场原始值：0.2（单发改造后；早期为 0.085 → 0.1 → 0.195/0.205）。
+# 2026-10-23 现场最终取 0.17（实弹标定，用户确认）。
+high_speed_delay_time: 0.17
+low_speed_delay_time: 0.17
 
 actuation_delay_ms: 0
 
@@ -255,7 +262,7 @@ xuc_vehicle_model_exit_rad_s: 0.45
 xuc_high_speed_enter_rad_s: 3.2
 xuc_high_speed_exit_rad_s: 2.5
 xuc_rotation_mode_dwell_ms: 600
-xuc_rotation_tracker_dropout_hold_ms: 250  # 装甲面短暂交接时保留模型，但禁止开火
+xuc_rotation_tracker_dropout_hold_ms: 500  # 装甲面短暂交接时保留模型，但禁止开火
 xuc_rotation_rate_filter_tau_ms: 100
 # 每次装甲面交接时，原始 EKF 角速度会下降约 1.3--1.8 rad/s，而过零 PLL
 # 仍稳定在约 4.5 rad/s。不要因这种周期性估计波动丢弃可靠的相位锁定；
@@ -266,7 +273,12 @@ xuc_rotation_rate_agreement_updates: 3
 xuc_rotation_rate_disagreement_updates: 18
 xuc_gyro_center_hold_ms: 3000.0
 xuc_fire_require_tracker_converged: true
-xuc_one_face_once_fire: true
+# 2026-10-23 现场置 false：true 时 armed 的重武装只在「事件钟周期编号推进」或
+# 「面误差≥34°」时发生；当 gyro_event_schedule_valid 为真而 hit_cycle 不推进
+# （PLL 丢样本）时两条路径互相阻塞，armed 长期 false ⇒ 长时间不开火，
+# 恢复后每面打一发形成 0.34 s 密集连发。现场表现为「长时间静默 + 突发连发 7~10 发」。
+# 置 false 后静默段消失，效果明显变好。
+xuc_one_face_once_fire: false
 xuc_one_face_limit_deg: 15.0
 xuc_one_face_rearm_deg: 34.0
 xuc_gyro_fire_stable_ms: 20.0
@@ -304,7 +316,12 @@ xuc_gyro_require_event_lock_for_fire: false
 xuc_gyro_predicted_yaw_tolerance_deg: 3.0
 xuc_gyro_predicted_yaw_trim_deg: 0.0
 xuc_gyro_visibility_yaw_tolerance_deg: 8.0
-xuc_gyro_fire_min_consecutive_frames: 2
+xuc_gyro_fire_min_consecutive_frames: 4
+# 候选成熟后逐帧择时：靠近现有预测偏航参考线或下一帧更差时触发。
+# 最多等待 50 ms 预算，到期在下一张有效帧决策；不阻塞跟踪，不绕过原门控。
+# 置 0 可恢复“候选成熟即触发”，用于现场对照。
+xuc_gyro_fire_selection_max_wait_ms: 50.0
+xuc_gyro_fire_selection_near_deg: 0.5
 # 候选窗口迟滞：门控抖动连续 N 帧（≈N/60 s）仍保留候选窗口，超过才复位。
 # 相位窗一次只开 0.2 s 量级，单帧抖动就清零重来会把开火机会按帧数乘性削掉
 # （2026-10-20 实测：22 s 内 13 次候选启动 / 13 次复位，只成 2 发）。
@@ -314,18 +331,21 @@ xuc_fire_candidate_hold_frames: 3
 # （2026-09-12 日志，共匹配 124 发）。此处等待 0.55 s 可避免队列中的命令过期，
 # 同时保留下位机实际支持的最高重复频率。
 xuc_feeder_active_rpm_threshold: 300.0
-xuc_gyro_post_feed_recovery_ms: 550.0
+# 2026-10-21 现场改为 0：电控已改成「收到 shoot 上升沿就拨一颗」，不再需要等上一个
+# 拨弹周期结束。550 会在遥测模式下把每次开火后的等待拉到 0.55 s，实测把频率压到
+# 0.18 发/s（2026-10-22 22:04 场，日志 post-feed hold=550 ms）。
+xuc_gyro_post_feed_recovery_ms: 0
 # 开火节奏回退间隔（毫秒）。0 = 保持原“依赖拨弹遥测”模式；>0 = 不依赖遥测，
 # 改为“距上次开火至少间隔 N ms”。
 # 启用原因（2026-10-13 实测）：电控固件把 bullet_speed/bullet_count 写死为 0，
 # 遥测模式下永远等不到拨弹反馈，开火被反复 inhibit（30 秒仅 7 发）；
 # 同一次实测已证明单帧 shoot=1（约 10ms）即可触发拨弹动作，故固定间隔可行。
-# 200 ms 是保守起步值（约 5 发/秒上限）；确认机构能跟上后再逐步下调。
-# 2026-10-17 现场评估瞄准精度时改为 1500 ms：连发太快难以分辨单发弹着，
-# 拉长到 1.5 s 后每发清晰可辨（首发不受影响，since_last_shot 初值为无穷大）。
-# 2026-10-18：配合弹着相位门改为 250 ms（拨弹起转→停转实测中位 111~120 ms，
-# 250 ms 留有余量；每发还要多等 min_consecutive_frames 2 帧 ≈ 40~80 ms）。
-xuc_fire_cadence_fallback_ms: 250
+# 步进模式一次完整拨弹约 480 ms（电控提供），命令到起转约 20~30 ms。
+# 最小请求间隔取 550 ms，给完整动作留余量；RPM 降到阈值以下不代表位置到位，
+# 不能再用旧的 250 ms 或 feeder_stop 日志作为完整拨弹已结束的依据。
+# 这里只限制最小间隔，到期仍须通过当前帧候选与择时门控，不定时补发旧请求。
+# 完整拨弹时间只约束重复请求，不替代实弹标定的预测延迟 0.17 s。
+xuc_fire_cadence_fallback_ms: 550
 # 开火脉冲保持时长（毫秒）。0 = 关闭（单帧脉冲，原行为）。
 # >0 时，开火上升沿后把 shoot 维持该时长，使下位机 AUTO 档（速度模式）拨弹轮
 # 获得确定性转动时间。实测单帧约 10ms 不足，一颗弹常需 3~4 次脉冲才能推入入口。
@@ -397,8 +417,12 @@ xuc_event_fire_delay_max_ms: 105
 # 在串口接收线程中观察拨弹器阈值，以五发匹配数据学习本轮基准，
 # 之后仅补偿机械漂移。预热期间保持 85 ms 标定值不变。
 # 使用中位数/MAD 窗口、每发 1.5 ms 的变化限制和 65--105 ms 硬边界来避免振荡。
-xuc_shot_delay_adaptation_enabled: true
-xuc_shot_delay_reference_ms: 235
+xuc_shot_delay_adaptation_enabled: false
+# 注意：自适应采到的是「命令→feeder_stop」，而步进模式下转速阈值会提前触发
+# （位置环接近目标时降速），实测只有 ~220 ms，与真实到位 502 ms 差 280 ms。
+# 这里把参考值对齐到实测的 220 ms，让自适应只做「漂移修正」、
+# 不去改写上面按电控数据标定的 0.50 s 总量。
+xuc_shot_delay_reference_ms: 220
 # 2026-10-20：自适应样本从「命令→拨弹起转」改为「命令→拨弹停转（≈出弹）」。
 # 当天 154 发实测：起转段 14~37 ms 很稳，拨弹运转段 40~160 ms、转速 300~1259 rpm
 # （差 4 倍），出弹时刻的抖动几乎全在这一段，所以样本改成整段、上下界随之放宽。
@@ -406,7 +430,9 @@ xuc_shot_delay_reference_ms: 235
 xuc_shot_delay_sample_min_ms: 20
 xuc_shot_delay_sample_max_ms: 300
 xuc_shot_delay_min_ms: 50
-xuc_shot_delay_max_ms: 260
+# 上界必须包住 high_speed_delay_time（0.2），否则 normalize_config 会把 nominal
+# 夹到上界，传导给 aimer 的延时被悄悄改小。留余量给自适应漂移。
+xuc_shot_delay_max_ms: 400
 xuc_shot_delay_window: 9
 xuc_shot_delay_min_samples: 5
 xuc_shot_delay_ewma_alpha: 0.35
