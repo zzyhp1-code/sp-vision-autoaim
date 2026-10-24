@@ -53,19 +53,10 @@ struct AimPredictionTrace
   bool whole_ekf_geometry = false;
   int face_id = -1, iterations = 0;
   int64_t base_prediction_ns = 0, prediction_ns = 0;
-  int64_t evaluation_ns = 0;
   double delay_s = std::numeric_limits<double>::quiet_NaN();
   double speed_mps = std::numeric_limits<double>::quiet_NaN();
   double flight_time_used_s = std::numeric_limits<double>::quiet_NaN();
   double flight_time_s = std::numeric_limits<double>::quiet_NaN();
-  bool rotation_override_used = false;
-  double rotation_rate_rad_s = std::numeric_limits<double>::quiet_NaN();
-};
-
-struct AimPredictionContext
-{
-  std::optional<std::chrono::steady_clock::time_point> evaluation_time;
-  std::optional<double> rotation_rate_rad_s;
 };
 
 class Aimer
@@ -76,14 +67,12 @@ public:
   io::Command aim(
     std::list<Target> targets, std::chrono::steady_clock::time_point timestamp, double bullet_speed,
     bool to_now = true, AimPredictionTrace * trace = nullptr,
-    AimGeometry geometry = AimGeometry::existing,
-    const AimPredictionContext & context = {});
+    AimGeometry geometry = AimGeometry::existing);
 
   io::Command aim(
     std::list<Target> targets, std::chrono::steady_clock::time_point timestamp, double bullet_speed,
     io::ShootMode shoot_mode, bool to_now = true, AimPredictionTrace * trace = nullptr,
-    AimGeometry geometry = AimGeometry::existing,
-    const AimPredictionContext & context = {});
+    AimGeometry geometry = AimGeometry::existing);
 
   // Applies the same bounded runtime correction to both speed branches.  Their
   // calibrated base values remain unchanged and are restored with zero.

@@ -37,8 +37,7 @@ void Aimer::set_delay_adjustment(double adjustment_s)
 
 io::Command Aimer::aim(
   std::list<Target> targets, std::chrono::steady_clock::time_point timestamp, double bullet_speed,
-  bool to_now, AimPredictionTrace * trace, AimGeometry geometry,
-  const AimPredictionContext & context)
+  bool to_now, AimPredictionTrace * trace, AimGeometry geometry)
 {
   if (trace) *trace = AimPredictionTrace{};
   debug_aim_point = {false, Eigen::Vector4d::Zero()};
@@ -66,20 +65,6 @@ io::Command Aimer::aim(
     raw_state[8] > 0.05 && raw_state[8] < 0.5 &&
     raw_state[8] + raw_state[9] > 0.05 && raw_state[8] + raw_state[9] < 0.5;
   if (trace) trace->whole_ekf_geometry = whole_ekf_geometry;
-  const bool use_rotation_override = whole_ekf_geometry &&
-    context.rotation_rate_rad_s.has_value() &&
-    std::isfinite(*context.rotation_rate_rad_s) &&
-    *context.rotation_rate_rad_s * raw_state[7] > 0.0;
-  const double rotation_rate = use_rotation_override ? *context.rotation_rate_rad_s : NAN;
-  if (trace) {
-    trace->rotation_override_used = use_rotation_override;
-    trace->rotation_rate_rad_s = use_rotation_override ? rotation_rate
-      : (whole_ekf_geometry ? raw_state[7] : target.ekf_x()[7]);
-  }
-  const auto predict_copy = [&](Target & copy, auto time) {
-    if (use_rotation_override) copy.predict_for_aim(time, rotation_rate);
-    else copy.predict(time);
-  };
   double delay_time =
     (std::abs(target.ekf_x()[7]) > decision_speed_
        ? high_speed_delay_time_
@@ -100,20 +85,16 @@ io::Command Aimer::aim(
   auto future = timestamp;
   if (to_now) {
     double dt;
-    const auto evaluation = context.evaluation_time.has_value()
-      ? *context.evaluation_time : std::chrono::steady_clock::now();
-    if (trace) trace->evaluation_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
-      evaluation.time_since_epoch()).count();
-    dt = tools::delta_time(evaluation, timestamp) + delay_time;
+    dt = tools::delta_time(std::chrono::steady_clock::now(), timestamp) + delay_time;
     future += std::chrono::microseconds(int(dt * 1e6));
-    predict_copy(target, future);
+    target.predict(future);
   }
 
   else {
     auto dt = 0.005 + delay_time;  //detector-aimer耗时0.005+发弹延时0.1
     // tools::logger()->info("dt is {:.4f} second", dt);
     future += std::chrono::microseconds(int(dt * 1e6));
-    predict_copy(target, future);
+    target.predict(future);
   }
 
   if (trace) trace->base_prediction_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
@@ -147,7 +128,7 @@ io::Command Aimer::aim(
   for (int iter = 0; iter < 10; ++iter) {
     // 预测目标在 future + prev_fly_time 时刻的位置
     auto predict_time = future + std::chrono::microseconds(static_cast<int>(prev_fly_time * 1e6));
-    predict_copy(iteration_target[iter], predict_time);
+    iteration_target[iter].predict(predict_time);
 
     // 计算瞄准点
     auto aim_point = choose_aim_point(
@@ -203,8 +184,7 @@ io::Command Aimer::aim(
 
 io::Command Aimer::aim(
   std::list<Target> targets, std::chrono::steady_clock::time_point timestamp, double bullet_speed,
-  io::ShootMode shoot_mode, bool to_now, AimPredictionTrace * trace, AimGeometry geometry,
-  const AimPredictionContext & context)
+  io::ShootMode shoot_mode, bool to_now, AimPredictionTrace * trace, AimGeometry geometry)
 {
   double yaw_offset;
   if (shoot_mode == io::left_shoot && left_yaw_offset_.has_value()) {
@@ -215,7 +195,7 @@ io::Command Aimer::aim(
     yaw_offset = yaw_offset_;
   }
 
-  auto command = aim(targets, timestamp, bullet_speed, to_now, trace, geometry, context);
+  auto command = aim(targets, timestamp, bullet_speed, to_now, trace, geometry);
   command.yaw = command.yaw - yaw_offset_ + yaw_offset;
   if (!std::isfinite(command.yaw) || !std::isfinite(command.pitch)) {
     if (trace) { trace->valid = false; trace->failure = AimPredictionFailure::non_finite; }

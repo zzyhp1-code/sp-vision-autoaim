@@ -136,8 +136,6 @@ comming_angle: 60
 leaving_angle: 20
 
 decision_speed: 0.8
-# off = original predictor; shadow = log only; active = reviewed stable-rate predictor only.
-xuc_rotation_prediction_mode: shadow
 # 根据现场反馈，明确采用 85 ms 的命令至弹着预测延迟。
 # 高速和低速预测均使用同一套实测标定值。
 # 2026-10-20 实测（当天 154 次拨弹）：开火命令→拨弹起转 23.5 ms（14.4~37），
