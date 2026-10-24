@@ -130,7 +130,7 @@ outpost_max_temp_lost_count: 75
 
 #####-----瞄准器参数-----#####
 yaw_offset: 0.0  # 动态视觉跟随以测量中心为零；避免静态偏置被计入预测超前量
-pitch_offset: 6.0          # 2026-10-20 现场值（小电脑 standard.yaml 同步）
+pitch_offset: 7.0          # 2026-10-24 现场值（小电脑 standard.yaml 同步）；2026-10-20 为 6.0
 
 comming_angle: 60
 leaving_angle: 20
@@ -393,7 +393,7 @@ xuc_direct_pitch_filter_tau_ms: 60.0     # 保留射击后的噪声抑制，同�
 xuc_direct_pitch_hold_ms: 180.0          # 已保存双轴验收值：短丢帧保持
 xuc_direct_pitch_max_rate_dps: 45.0      # 介于稳定但较慢的 25 与此前验证过的 80 度/秒之间
 xuc_direct_pitch_error_gain: 1.35        # 恢复稳态控制能力；低于此前验证过的 1.65 增益
-xuc_projectile_speed_mps: 18.5        # 2026-10-20 现场值（小电脑同步）；2026-10-16 实测（测速文件）：摩擦轮降速后弹速 17.3 m/s；2026-10-18复测：19m/s为0/20，17.3m/s为5/20；因果待更多样本确认
+xuc_projectile_speed_mps: 18.0        # 2026-10-24 现场值（小电脑同步）；2026-10-20 为 18.5；2026-10-16 实测（测速文件）：摩擦轮降速后弹速 17.3 m/s；2026-10-18复测：19m/s为0/20，17.3m/s为5/20；因果待更多样本确认
 xuc_ballistic_reference_projectile_speed_mps: 10.0  # 0.91m/17cm实弹基准采集于2500rpm，禁止随当前转速重算
 xuc_ballistic_pitch_enabled: true
 xuc_camera_forward_of_muzzle_m: 0.06     # 实测：相机中心在炮口前方 6 cm
