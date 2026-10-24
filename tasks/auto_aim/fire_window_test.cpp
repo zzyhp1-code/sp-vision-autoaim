@@ -109,6 +109,90 @@ void test_bounded_selection()
     assert(!selector.update(false, true, false, 2.0 * deg, 0.032, disabled).ready);
   }
 }
+
+void test_fixed_interval()
+{
+  constexpr std::int64_t interval = 700000000;
+  auto_aim::FixedFireInterval clock;
+  assert(clock.poll(0, interval).ready);
+  assert(!clock.poll(0, 0).ready);
+  clock.sent(1000000000, interval);
+  assert(clock.next_due_ns() == 1700000000);
+  assert(!clock.poll(1699999999, interval).ready);
+
+  // Missing quality consumes the tick. Reacquisition cannot make it up.
+  const auto policy = auto_aim::make_fire_window_policy(false, true, true, 4);
+  const auto missed = clock.poll(1700000000, interval);
+  assert(missed.ready && missed.due_ns == 1700000000 && missed.skipped == 0);
+  assert(!policy.ready(false, 10, false, false));
+  assert(clock.last_sent_ns() == 1000000000);
+  assert(clock.next_due_ns() == 2400000000);
+  assert(policy.ready(true, 4, false, false));
+  assert(!clock.poll(1950000000, interval).ready);
+  assert(clock.poll(2400000000, interval).ready);
+  clock.sent(2415000000, interval);  // Actual TX jitter does not move the grid.
+  assert(clock.next_due_ns() == 3100000000);
+  assert(!clock.poll(2500000000, interval).ready);
+  assert(clock.poll(3100000000, interval).ready);
+  clock.sent(3105000000, interval);
+  assert(clock.next_due_ns() == 3800000000);
+  assert(!clock.poll(1900000000, interval).ready);
+  clock.sent(1800000000, interval);
+  assert(clock.last_sent_ns() == 3105000000);
+
+  // A long processing gap consumes every missed slot without catch-up bursts.
+  const auto stalled = clock.poll(5205000000, interval);
+  assert(!stalled.ready && stalled.skipped == 3 && stalled.due_ns == 5200000000);
+  assert(clock.next_due_ns() == 5900000000);
+  assert(!clock.poll(5250000000, interval).ready);
+  assert(clock.poll(5900000000, interval).ready);
+  const auto stale = clock.poll(6660000000, interval);
+  assert(!stale.ready && stale.skipped == 1 && stale.due_ns == 6600000000);
+  assert(clock.next_due_ns() == 7300000000);
+  assert(!clock.poll(6670000000, interval).ready);
+  assert(auto_aim::FixedFireInterval::within_tick(7350000000, 7300000000));
+  assert(!auto_aim::FixedFireInterval::within_tick(7350000001, 7300000000));
+
+  // At 60 FPS, qualification is accumulated before the deadline. Continuous
+  // tracking and a target-loss interval both preserve the original time grid.
+  for (const bool with_loss : {false, true}) {
+    auto_aim::FixedFireInterval regular;
+    int candidate_frames = 0;
+    int requests = 0;
+    int skipped = 0;
+    std::int64_t anchor = 0;
+    for (std::int64_t frame = 0; frame < (with_loss ? 250 : 210); ++frame) {
+      const bool model_and_observation_ready = frame >= 8 &&
+        !(with_loss && frame >= 50 && frame <= 65);
+      candidate_frames = model_and_observation_ready ? candidate_frames + 1 : 0;
+      const std::int64_t now = frame * 16666667;
+      // Poll even when the model is unavailable, as the production loop does.
+      const auto tick = regular.poll(now, interval);
+      const bool qualified = policy.ready(
+        model_and_observation_ready, candidate_frames, false, false);
+      if (tick.ready && qualified) {
+        if (requests == 0) anchor = now;
+        else {
+          const auto slot = requests + skipped;
+          assert(tick.due_ns == anchor + slot * interval);
+          assert(now >= tick.due_ns && now - tick.due_ns < 16666667);
+        }
+        regular.sent(now, interval);
+        candidate_frames = 0;
+        ++requests;
+        assert(regular.next_due_ns() == anchor + (requests + skipped) * interval);
+        assert(!regular.poll(now, interval).ready);
+      } else if (tick.ready && tick.due_ns > 0) {
+        ++skipped;
+      }
+      if (frame < 8) assert(requests == 0);
+      if (with_loss && frame >= 50 && frame < 95) assert(requests == 1);
+      if (with_loss && frame == 95) assert(requests == 2);
+    }
+    assert(requests == 5);
+    assert(skipped == (with_loss ? 1 : 0));
+  }
+}
 }  // namespace
 
 int main()
@@ -171,5 +255,6 @@ int main()
   }
 
   test_bounded_selection();
-  std::cout << "fire_window_test: PASS (policy + bounded selection)\n";
+  test_fixed_interval();
+  std::cout << "fire_window_test: PASS (policy + bounded selection + fixed interval)\n";
 }

@@ -3,10 +3,67 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <limits>
 
 namespace auto_aim
 {
+// A time grid anchored by the first successful transmission. Poll every frame,
+// including target loss: a tick is consumed even when qualification is closed.
+class FixedFireInterval
+{
+public:
+  struct Tick
+  {
+    bool ready = false;
+    std::int64_t due_ns = 0;
+    std::int64_t skipped = 0;
+  };
+
+  static constexpr std::int64_t max_lateness_ns = 50000000;
+
+  Tick poll(std::int64_t now_ns, std::int64_t interval_ns)
+  {
+    Tick tick;
+    if (interval_ns <= 0 || now_ns < 0) return tick;
+    if (!have_sent_) {
+      tick.ready = true;  // Initial acquisition; sent() anchors the grid once.
+      return tick;
+    }
+    if (now_ns < next_due_ns_) return tick;
+    const auto elapsed_ticks = (now_ns - next_due_ns_) / interval_ns + 1;
+    tick.due_ns = next_due_ns_ + (elapsed_ticks - 1) * interval_ns;
+    next_due_ns_ += elapsed_ticks * interval_ns;
+    // Do not issue stale ticks after a processing stall or replay missed slots.
+    tick.ready = elapsed_ticks == 1 && within_tick(now_ns, tick.due_ns);
+    tick.skipped = elapsed_ticks - (tick.ready ? 1 : 0);
+    return tick;
+  }
+
+  static bool within_tick(std::int64_t now_ns, std::int64_t due_ns)
+  {
+    return due_ns == 0 ||
+      (now_ns >= due_ns && now_ns - due_ns <= max_lateness_ns);
+  }
+
+  void sent(std::int64_t tx_call_ns, std::int64_t interval_ns)
+  {
+    if (interval_ns <= 0 || tx_call_ns < 0 || (have_sent_ && tx_call_ns < last_sent_ns_)) return;
+    if (!have_sent_) next_due_ns_ = tx_call_ns + interval_ns;
+    last_sent_ns_ = tx_call_ns;
+    have_sent_ = true;
+  }
+
+  bool have_sent() const { return have_sent_; }
+  std::int64_t last_sent_ns() const { return last_sent_ns_; }
+  std::int64_t next_due_ns() const { return next_due_ns_; }
+
+private:
+  bool have_sent_ = false;
+  std::int64_t last_sent_ns_ = 0;
+  std::int64_t next_due_ns_ = 0;
+};
+
 enum class FireTiming { stable_window, impact_phase, event_clock };
 
 // One policy is shared by candidate qualification and the final send stage.

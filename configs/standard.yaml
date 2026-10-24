@@ -251,6 +251,8 @@ xuc_allow_shoot: true               # 2026-10-12 22:35 解除开火限制（试�
 # 2026-10-15 现场已启用（与远程一致）。
 xuc_control_persist_enabled: true
 xuc_fire_guard_enabled: true       # 要求两个轴方向上均有新鲜的装甲板实测值
+# true：temp_lost 期间禁止请求，保留预测/跟随；恢复后重新积累候选。false：仅关闭此状态门。
+xuc_fire_inhibit_temp_lost: true
 xuc_fire_stable_ms: 120.0          # 短时防抖；重复触发由反馈驱动的脉冲处理
 xuc_fire_yaw_tolerance_deg: 3.0    # 0.91m约±4.8cm，仍在小装甲板水平范围内
 xuc_fire_pitch_tolerance_deg: 1.1  # 介于无射击的0.8°与明显低弹的2.0°之间；配合更强Pitch闭环
@@ -346,6 +348,9 @@ xuc_gyro_post_feed_recovery_ms: 0
 # 这里只限制最小间隔，到期仍须通过当前帧候选与择时门控，不定时补发旧请求。
 # 完整拨弹时间只约束重复请求，不替代实弹标定的预测延迟 0.17 s。
 xuc_fire_cadence_fallback_ms: 550
+# 固定节拍试验：首发建立700ms时间网格；到点不合格就跳过，计时不停，恢复后等下一节点。
+# 候选在计时期间积累；关闭额外择时等待。0关闭试验，恢复上面的旧节奏策略。
+xuc_fire_fixed_interval_ms: 700.0
 # 开火脉冲保持时长（毫秒）。0 = 关闭（单帧脉冲，原行为）。
 # >0 时，开火上升沿后把 shoot 维持该时长，使下位机 AUTO 档（速度模式）拨弹轮
 # 获得确定性转动时间。实测单帧约 10ms 不足，一颗弹常需 3~4 次脉冲才能推入入口。
@@ -389,9 +394,9 @@ xuc_direct_yaw_hold_ms: 300.0            # 移动靶短丢帧继续使用6°内�
 xuc_direct_yaw_max_rate_dps: 90.0        # 限制指令变化速率，防止云台突然反转
 xuc_final_yaw_command_max_rate_dps: 30.0 # 抑制完整 ESKF 超前量及装甲板/车体模型交接带来的变化
 xuc_direct_pitch_guard: true             # 使用装甲板像素纵向误差 + 当前IMU生成绝对 Pitch 目标
-xuc_direct_pitch_filter_tau_ms: 60.0     # 保留射击后的噪声抑制，同时避免已观察到的长时间垂直滞后
+xuc_direct_pitch_filter_tau_ms: 100.0    # 仅使用关联成功且坐标一致的观测，抑制单帧纵向抖动
 xuc_direct_pitch_hold_ms: 180.0          # 已保存双轴验收值：短丢帧保持
-xuc_direct_pitch_max_rate_dps: 45.0      # 介于稳定但较慢的 25 与此前验证过的 80 度/秒之间
+xuc_direct_pitch_max_rate_dps: 10.0      # 约60FPS下每帧最多变化0.167°；首次控制/长丢失恢复从反馈角起步
 xuc_direct_pitch_error_gain: 1.35        # 恢复稳态控制能力；低于此前验证过的 1.65 增益
 xuc_projectile_speed_mps: 18.0        # 2026-10-24 现场值（小电脑同步）；2026-10-20 为 18.5；2026-10-16 实测（测速文件）：摩擦轮降速后弹速 17.3 m/s；2026-10-18复测：19m/s为0/20，17.3m/s为5/20；因果待更多样本确认
 xuc_ballistic_reference_projectile_speed_mps: 10.0  # 0.91m/17cm实弹基准采集于2500rpm，禁止随当前转速重算
