@@ -110,89 +110,106 @@ void test_bounded_selection()
   }
 }
 
-void test_fixed_interval()
+void test_temporary_loss()
 {
-  constexpr std::int64_t interval = 700000000;
-  auto_aim::FixedFireInterval clock;
-  assert(clock.poll(0, interval).ready);
-  assert(!clock.poll(0, 0).ready);
-  clock.sent(1000000000, interval);
-  assert(clock.next_due_ns() == 1700000000);
-  assert(!clock.poll(1699999999, interval).ready);
-
-  // Missing quality consumes the tick. Reacquisition cannot make it up.
+  using namespace std::chrono;
+  using auto_aim::FireClock;
+  const auto origin = FireClock::time_point{} + seconds(1);
+  auto_aim::FireObservationClock clock;
+  auto_aim::FireCandidateWindow candidate;
+  auto_aim::FireRequestGates physical;
+  physical.target = physical.model = physical.prediction = physical.control = true;
+  physical.auto_mode = physical.feedback = physical.convergence = physical.motion = true;
+  physical.allow_shoot = true;
+  physical.cadence = physical.yaw = physical.visibility = physical.pitch = true;
+  physical.one_face = physical.phase = physical.timing = true;
+  const auto gates = [&](FireClock::time_point now, bool gap, bool inhibit = false,
+                         std::uint64_t generation = 1, int face = 2, bool geometry = true) {
+    return auto_aim::apply_fire_observation_gates(
+      physical, candidate, clock, now, generation, face, geometry, !gap, gap,
+      inhibit, !gap, 50.0, 4);
+  };
+  auto_aim::FireWindowSelector selector;
   const auto policy = auto_aim::make_fire_window_policy(false, true, true, 4);
-  const auto missed = clock.poll(1700000000, interval);
-  assert(missed.ready && missed.due_ns == 1700000000 && missed.skipped == 0);
-  assert(!policy.ready(false, 10, false, false));
-  assert(clock.last_sent_ns() == 1000000000);
-  assert(clock.next_due_ns() == 2400000000);
-  assert(policy.ready(true, 4, false, false));
-  assert(!clock.poll(1950000000, interval).ready);
-  assert(clock.poll(2400000000, interval).ready);
-  clock.sent(2415000000, interval);  // Actual TX jitter does not move the grid.
-  assert(clock.next_due_ns() == 3100000000);
-  assert(!clock.poll(2500000000, interval).ready);
-  assert(clock.poll(3100000000, interval).ready);
-  clock.sent(3105000000, interval);
-  assert(clock.next_due_ns() == 3800000000);
-  assert(!clock.poll(1900000000, interval).ready);
-  clock.sent(1800000000, interval);
-  assert(clock.last_sent_ns() == 3105000000);
-
-  // A long processing gap consumes every missed slot without catch-up bursts.
-  const auto stalled = clock.poll(5205000000, interval);
-  assert(!stalled.ready && stalled.skipped == 3 && stalled.due_ns == 5200000000);
-  assert(clock.next_due_ns() == 5900000000);
-  assert(!clock.poll(5250000000, interval).ready);
-  assert(clock.poll(5900000000, interval).ready);
-  const auto stale = clock.poll(6660000000, interval);
-  assert(!stale.ready && stale.skipped == 1 && stale.due_ns == 6600000000);
-  assert(clock.next_due_ns() == 7300000000);
-  assert(!clock.poll(6670000000, interval).ready);
-  assert(auto_aim::FixedFireInterval::within_tick(7350000000, 7300000000));
-  assert(!auto_aim::FixedFireInterval::within_tick(7350000001, 7300000000));
-
-  // At 60 FPS, qualification is accumulated before the deadline. Continuous
-  // tracking and a target-loss interval both preserve the original time grid.
-  for (const bool with_loss : {false, true}) {
-    auto_aim::FixedFireInterval regular;
-    int candidate_frames = 0;
-    int requests = 0;
-    int skipped = 0;
-    std::int64_t anchor = 0;
-    for (std::int64_t frame = 0; frame < (with_loss ? 250 : 210); ++frame) {
-      const bool model_and_observation_ready = frame >= 8 &&
-        !(with_loss && frame >= 50 && frame <= 65);
-      candidate_frames = model_and_observation_ready ? candidate_frames + 1 : 0;
-      const std::int64_t now = frame * 16666667;
-      // Poll even when the model is unavailable, as the production loop does.
-      const auto tick = regular.poll(now, interval);
-      const bool qualified = policy.ready(
-        model_and_observation_ready, candidate_frames, false, false);
-      if (tick.ready && qualified) {
-        if (requests == 0) anchor = now;
-        else {
-          const auto slot = requests + skipped;
-          assert(tick.due_ns == anchor + slot * interval);
-          assert(now >= tick.due_ns && now - tick.due_ns < 16666667);
-        }
-        regular.sent(now, interval);
-        candidate_frames = 0;
-        ++requests;
-        assert(regular.next_due_ns() == anchor + (requests + skipped) * interval);
-        assert(!regular.poll(now, interval).ready);
-      } else if (tick.ready && tick.due_ns > 0) {
-        ++skipped;
-      }
-      if (frame < 8) assert(requests == 0);
-      if (with_loss && frame >= 50 && frame < 95) assert(requests == 1);
-      if (with_loss && frame == 95) assert(requests == 2);
-    }
-    assert(requests == 5);
-    assert(skipped == (with_loss ? 1 : 0));
+  // Fourth *measured* frame issues immediately, with no extra selection wait.
+  for (int frame = 0; frame < 4; ++frame) {
+    const auto image = origin + milliseconds(16 * frame);
+    clock.observe(1, image, true);
+    candidate.update(gates(image, false).candidate_allowed(), false, 1, 2, true,
+                     image, 0.2, 3);
+    const auto ready = gates(image, false).request_allowed();
+    assert(ready == (frame == 3));
+    const auto decision = selector.update(true, candidate.frames >= policy.required_frames,
+      false, 2.0 * deg, duration<double>(image.time_since_epoch()).count(), {0.0, 0.5 * deg});
+    assert(decision.ready == ready);
   }
+  const auto last_image = clock.image_time;
+  // Prediction must not refresh observation time or grow the candidate count.
+  for (int age : {16, 32, 49, 50}) {
+    const auto now = last_image + milliseconds(age);
+    clock.observe(1, now, false);
+    const auto g = gates(now, true);
+    assert(g.request_allowed() && g.candidate_allowed(true));
+    candidate.update(g.candidate_allowed(true), true, 1, 2, true, now, 0.3, 3);
+    assert(candidate.frames == 4 && clock.image_time == last_image);
+  }
+  // Inclusive 50 ms boundary; processing and send delay are both in the age.
+  assert(gates(last_image + milliseconds(50), true).request_allowed());
+  assert(!gates(last_image + milliseconds(50) + nanoseconds(1), true).request_allowed());
+  const auto qualified = gates(last_image + milliseconds(49), true);
+  assert(qualified.request_allowed());
+  assert(!gates(last_image + milliseconds(51), true).request_allowed());
+  assert(!gates(last_image + milliseconds(20), true, true).request_allowed());
+  for (int frames = 0; frames < 4; ++frames) {
+    auto immature = candidate;
+    immature.frames = frames;
+    assert(!immature.can_continue(1, 2, true, 4));
+    const auto g = auto_aim::apply_fire_observation_gates(
+      physical, immature, clock, last_image + milliseconds(16), 1, 2, true,
+      false, true, false, false, 50, 4);
+    assert(!g.candidate_allowed(true) && !g.request_allowed());
+    immature.update(false, true, 1, 2, true, last_image, 0.2, 3);
+    assert(!immature.active && immature.frames == 0);
+  }
+  // A changed face, model generation or geometry cannot inherit qualification.
+  assert(!gates(last_image, true, false, 2).request_allowed());
+  assert(!gates(last_image, true, false, 1, 3).request_allowed());
+  assert(!gates(last_image, true, false, 1, 2, false).request_allowed());
+  auto changed = candidate;
+  changed.update(true, false, 1, 3, true, last_image, 0.5, 3);
+  assert(changed.frames == 1 && changed.face == 3 && !changed.sent);
+  changed = candidate;
+  changed.update(true, false, 2, 2, true, last_image, 0.5, 3);
+  assert(changed.frames == 1 && changed.generation == 2);
+  candidate.sent = true;
+  assert(!gates(last_image, true).request_allowed());
+  assert(!candidate.can_continue(1, 2, true, 4));
+  candidate.sent = false;
+  // Every physical gate, including prediction/trust/feedback and rebuild, is
+  // authoritative for candidate, ordinary send, pulse and diagnostic paths.
+  for (auto member : {&auto_aim::FireRequestGates::target, &auto_aim::FireRequestGates::model,
+       &auto_aim::FireRequestGates::prediction, &auto_aim::FireRequestGates::feedback,
+       &auto_aim::FireRequestGates::yaw, &auto_aim::FireRequestGates::visibility,
+       &auto_aim::FireRequestGates::pitch, &auto_aim::FireRequestGates::cadence}) {
+    physical.*member = false;
+    const auto g = gates(last_image, true);
+    assert(!g.request_allowed() && !g.candidate_allowed(true));
+    physical.*member = true;
+  }
+  auto all_closed = gates(last_image, true);
+  all_closed.prediction = all_closed.model = all_closed.feedback = false;
+  const auto reasons = all_closed.closed();
+  assert(reasons.find("prediction") != std::string::npos);
+  assert(reasons.find("model") != std::string::npos);
+  assert(reasons.find("feedback") != std::string::npos);
+  candidate.reset();  // Full loss or entry to rebuild discards the window.
+  assert(!gates(last_image, true).request_allowed());
+  clock.observe(2, last_image + milliseconds(16), false);
+  assert(!clock.within(last_image + milliseconds(20), 2, 50.0));
+  clock.observe(2, last_image + milliseconds(32), true);
+  assert(clock.within(last_image + milliseconds(33), 2, 50.0));
 }
+
 }  // namespace
 
 int main()
@@ -255,6 +272,6 @@ int main()
   }
 
   test_bounded_selection();
-  test_fixed_interval();
-  std::cout << "fire_window_test: PASS (policy + bounded selection + fixed interval)\n";
+  test_temporary_loss();
+  std::cout << "fire_window_test: PASS (policy + selection + temporary-loss/send gates)\n";
 }

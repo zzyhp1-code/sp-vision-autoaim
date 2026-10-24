@@ -3,6 +3,7 @@
 
 #include <Eigen/Dense>
 #include <chrono>
+#include <cstdint>
 #include <list>
 #include <memory>
 #include <string>
@@ -37,6 +38,9 @@ public:
   Tracker(const std::string & config_path, Solver & solver);
 
   std::string state() const;
+  // Discard the complete estimator; the next detection creates a fresh Target.
+  void reset();
+  std::uint64_t model_generation() const { return model_generation_; }
   const std::vector<ArmorAssociation> & last_associations() const;
   int primary_detection_index() const;
   int primary_face_id() const;
@@ -73,6 +77,7 @@ private:
   int normal_temp_lost_count_;
   std::string state_, pre_state_;
   Target target_;
+  std::uint64_t model_generation_ = 0;
   std::chrono::steady_clock::time_point last_timestamp_;
   ArmorPriority omni_target_priority_;
   double association_max_cost_;

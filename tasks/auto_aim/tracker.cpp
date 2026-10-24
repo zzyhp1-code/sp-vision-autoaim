@@ -112,6 +112,23 @@ Tracker::Tracker(const std::string & config_path, Solver & solver)
 
 std::string Tracker::state() const { return state_; }
 
+void Tracker::reset()
+{
+  target_ = Target{};
+  state_ = pre_state_ = "lost";
+  detect_count_ = 0;
+  temp_lost_count_ = 0;
+  max_temp_lost_count_ = normal_temp_lost_count_;
+  diverge_streak_ = 0;
+  switch_candidate_name_ = ArmorName::not_armor;
+  switch_candidate_frames_ = 0;
+  omni_target_priority_ = ArmorPriority::fifth;
+  last_timestamp_ = std::chrono::steady_clock::time_point{};
+  last_associations_.clear();
+  primary_detection_index_ = -1;
+  primary_face_id_ = -1;
+}
+
 const std::vector<Tracker::ArmorAssociation> & Tracker::last_associations() const
 {
   return last_associations_;
@@ -441,6 +458,7 @@ bool Tracker::set_target(std::list<Armor> & armors, std::chrono::steady_clock::t
   // attempt to use a negative l to "swap" the predictions came from a mistaken
   // reading of the per-face cost breakdown and has been reverted.
   target_.seed_geometry(0.04, 0.00);
+  ++model_generation_;
 
   last_associations_.push_back({selected_detection_index, 0, 0.0});
   primary_detection_index_ = selected_detection_index;

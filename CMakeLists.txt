@@ -268,6 +268,11 @@ add_executable(
   tasks/auto_aim/center_follow_lead_test.cpp)
 add_executable(shot_delay_adapter_test tasks/auto_aim/shot_delay_adapter_test.cpp)
 add_executable(fire_window_test tasks/auto_aim/fire_window_test.cpp)
+add_executable(model_rebuild_test tasks/auto_aim/model_rebuild_test.cpp)
+add_executable(tracker_reset_test tasks/auto_aim/tracker_reset_test.cpp)
+target_link_libraries(tracker_reset_test ${OpenCV_LIBS} fmt::fmt yaml-cpp auto_aim tools io)
+add_executable(aimer_prediction_test tasks/auto_aim/aimer_prediction_test.cpp)
+target_link_libraries(aimer_prediction_test ${OpenCV_LIBS} fmt::fmt yaml-cpp auto_aim tools io)
 add_executable(
   adaptive_corner_refiner_test
   tasks/auto_aim/adaptive_corner_refiner_test.cpp
@@ -291,6 +296,9 @@ foreach(estimator_test
     center_follow_lead_test
     shot_delay_adapter_test
     fire_window_test
+    model_rebuild_test
+    tracker_reset_test
+    aimer_prediction_test
     adaptive_corner_refiner_test
     ekf_consistency_test
     iterated_ekf_test)

@@ -40,10 +40,18 @@ io::Command Aimer::aim(
   bool to_now, AimPredictionTrace * trace, AimGeometry geometry)
 {
   if (trace) *trace = AimPredictionTrace{};
-  if (targets.empty()) return {false, false, 0, 0};
+  debug_aim_point = {false, Eigen::Vector4d::Zero()};
+  const auto fail = [&](AimPredictionFailure failure) -> io::Command {
+    if (trace) { trace->valid = false; trace->failure = failure; }
+    debug_aim_point.valid = false;
+    return {false, false, 0, 0};
+  };
+  if (targets.empty()) return fail(AimPredictionFailure::no_target);
   auto target = targets.front();
 
   const auto & raw_state = target.ekf().x;
+  if (raw_state.size() != 11 || !raw_state.allFinite() || !target.ekf_x().allFinite())
+    return fail(AimPredictionFailure::non_finite);
   // 在帧边界上一次性决定用哪套几何，所有弹道迭代共用同一个模型。
   // 小陀螺（4 装甲、|ω| > decision_speed、主 EKF 状态健康）走主 EKF；
   // 静止/低速/前哨站保留原来的 ekf_x() 路径。
@@ -91,12 +99,13 @@ io::Command Aimer::aim(
 
   if (trace) trace->base_prediction_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
     future.time_since_epoch()).count();
-  auto aim_point0 = choose_aim_point(target, whole_ekf_geometry);
+  auto aim_point0 = choose_aim_point(target, whole_ekf_geometry, trace ? &trace->face_id : nullptr);
   debug_aim_point = aim_point0;
   if (!aim_point0.valid) {
     // tools::logger()->debug("Invalid aim_point0.");
-    return {false, false, 0, 0};
+    return fail(AimPredictionFailure::initial_selection);
   }
+  if (!aim_point0.xyza.allFinite()) return fail(AimPredictionFailure::non_finite);
 
   Eigen::Vector3d xyz0 = aim_point0.xyza.head(3);
   auto d0 = std::sqrt(xyz0[0] * xyz0[0] + xyz0[1] * xyz0[1]);
@@ -105,8 +114,10 @@ io::Command Aimer::aim(
     tools::logger()->debug(
       "[Aimer] Unsolvable trajectory0: {:.2f} {:.2f} {:.2f}", bullet_speed, d0, xyz0[2]);
     debug_aim_point.valid = false;
-    return {false, false, 0, 0};
+    return fail(AimPredictionFailure::trajectory);
   }
+  if (!std::isfinite(trajectory0.fly_time) || !std::isfinite(trajectory0.pitch))
+    return fail(AimPredictionFailure::non_finite);
 
   // 迭代求解飞行时间 (最多10次，收敛条件：相邻两次fly_time差 <0.001)
   bool converged = false;
@@ -130,8 +141,9 @@ io::Command Aimer::aim(
     }
     debug_aim_point = aim_point;
     if (!aim_point.valid) {
-      return {false, false, 0, 0};
+      return fail(AimPredictionFailure::iterative_selection);
     }
+    if (!aim_point.xyza.allFinite()) return fail(AimPredictionFailure::non_finite);
 
     // 计算新弹道
     Eigen::Vector3d xyz = aim_point.xyza.head(3);
@@ -144,8 +156,10 @@ io::Command Aimer::aim(
         "[Aimer] Unsolvable trajectory in iter {}: speed={:.2f}, d={:.2f}, z={:.2f}", iter + 1,
         bullet_speed, d, xyz.z());
       debug_aim_point.valid = false;
-      return {false, false, 0, 0};
+      return fail(AimPredictionFailure::trajectory);
     }
+    if (!std::isfinite(current_traj.fly_time) || !std::isfinite(current_traj.pitch))
+      return fail(AimPredictionFailure::non_finite);
 
     // 检查收敛条件
     if (std::abs(current_traj.fly_time - prev_fly_time) < 0.001) {
@@ -159,6 +173,7 @@ io::Command Aimer::aim(
   Eigen::Vector3d final_xyz = debug_aim_point.xyza.head(3);
   double yaw = std::atan2(final_xyz.y(), final_xyz.x()) + yaw_offset_;
   double pitch = -(current_traj.pitch + pitch_offset_);  //世界坐标系下pitch向上为负
+  if (!std::isfinite(yaw) || !std::isfinite(pitch)) return fail(AimPredictionFailure::non_finite);
   if (trace) {
     trace->valid = std::isfinite(yaw) && std::isfinite(pitch);
     trace->converged = converged;
@@ -182,6 +197,11 @@ io::Command Aimer::aim(
 
   auto command = aim(targets, timestamp, bullet_speed, to_now, trace, geometry);
   command.yaw = command.yaw - yaw_offset_ + yaw_offset;
+  if (!std::isfinite(command.yaw) || !std::isfinite(command.pitch)) {
+    if (trace) { trace->valid = false; trace->failure = AimPredictionFailure::non_finite; }
+    debug_aim_point.valid = false;
+    return {false, false, 0, 0};
+  }
 
   return command;
 }

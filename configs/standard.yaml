@@ -121,8 +121,8 @@ whole_state_iekf_huber_threshold: 1.5
 yaw_eskf_angular_jerk_variance: 20.0
 yaw_eskf_measurement_floor_deg: 1.0
 yaw_eskf_nis_reject_threshold: 16.0
-yaw_eskf_min_trusted_updates: 6
-yaw_eskf_trusted_rate_std_rad_s: 2.0
+yaw_eskf_min_trusted_updates: 4                # 从6降到4：降低冷启动延迟，更快建立trust
+yaw_eskf_trusted_rate_std_rad_s: 3.0          # 从2.0升到3.0：方差阈值9.0，容忍装甲板换面时的1.5 rad/s角速度波动
 yaw_eskf_max_trusted_abs_rate_rad_s: 8.0       # 拒绝关联导致的异常尖峰；此类尖峰可达 15--40 rad/s
 yaw_eskf_max_trusted_abs_acceleration_rad_s2: 30.0
 max_temp_lost_count: 15
@@ -130,7 +130,7 @@ outpost_max_temp_lost_count: 75
 
 #####-----瞄准器参数-----#####
 yaw_offset: 0.0  # 动态视觉跟随以测量中心为零；避免静态偏置被计入预测超前量
-pitch_offset: 7.0          # 2026-10-24 现场值（小电脑 standard.yaml 同步）；2026-10-20 为 6.0
+pitch_offset: 6.0          # 2026-10-20 现场值（小电脑 standard.yaml 同步）
 
 comming_angle: 60
 leaving_angle: 20
@@ -152,9 +152,8 @@ decision_speed: 0.8
 # 的耗时——弹丸在拨弹轮转到中途时就被摩擦轮咬住甩出，出膛明显早于步进到位。
 # 因此 0.2 这个量级是对的，不要再按「步进耗时」去推算延时。
 # 现场原始值：0.2（单发改造后；早期为 0.085 → 0.1 → 0.195/0.205）。
-# 2026-10-23 现场最终取 0.17（实弹标定，用户确认）。
-high_speed_delay_time: 0.17
-low_speed_delay_time: 0.17
+high_speed_delay_time: 0.167
+low_speed_delay_time: 0.165
 
 actuation_delay_ms: 0
 
@@ -250,9 +249,11 @@ xuc_allow_shoot: true               # 2026-10-12 22:35 解除开火限制（试�
 # 退出 AUTO 或链路失效时自动失效，控制权交还遥控器。
 # 2026-10-15 现场已启用（与远程一致）。
 xuc_control_persist_enabled: true
-xuc_fire_guard_enabled: true       # 要求两个轴方向上均有新鲜的装甲板实测值
-# true：temp_lost 期间禁止请求，保留预测/跟随；恢复后重新积累候选。false：仅关闭此状态门。
-xuc_fire_inhibit_temp_lost: true
+xuc_fire_guard_enabled: true  # Measured gates plus bounded mature prediction continuation.
+# true: inhibit temporary loss; false: mature same-model/same-face continuation only.
+xuc_fire_inhibit_temp_lost: false
+# Age from last trusted associated IMAGE timestamp, including processing and send delay.
+xuc_fire_temp_lost_max_age_ms: 50.0
 xuc_fire_stable_ms: 120.0          # 短时防抖；重复触发由反馈驱动的脉冲处理
 xuc_fire_yaw_tolerance_deg: 3.0    # 0.91m约±4.8cm，仍在小装甲板水平范围内
 xuc_fire_pitch_tolerance_deg: 1.1  # 介于无射击的0.8°与明显低弹的2.0°之间；配合更强Pitch闭环
@@ -275,11 +276,6 @@ xuc_rotation_rate_agreement_updates: 3
 xuc_rotation_rate_disagreement_updates: 18
 xuc_gyro_center_hold_ms: 3000.0
 xuc_fire_require_tracker_converged: true
-# 2026-10-23 现场置 false：true 时 armed 的重武装只在「事件钟周期编号推进」或
-# 「面误差≥34°」时发生；当 gyro_event_schedule_valid 为真而 hit_cycle 不推进
-# （PLL 丢样本）时两条路径互相阻塞，armed 长期 false ⇒ 长时间不开火，
-# 恢复后每面打一发形成 0.34 s 密集连发。现场表现为「长时间静默 + 突发连发 7~10 发」。
-# 置 false 后静默段消失，效果明显变好。
 xuc_one_face_once_fire: false
 xuc_one_face_limit_deg: 15.0
 xuc_one_face_rearm_deg: 34.0
@@ -316,13 +312,11 @@ xuc_gyro_require_event_lock_for_fire: false
 # 直接门控的预测偏航容差。center_follow 下瞄准点超前量 ≤ r/d ≈ 3.9°，1.5° 会把
 # 大部分帧挡在门外，放 3.0° 让直接门控真正接管。
 xuc_gyro_predicted_yaw_tolerance_deg: 3.0
-xuc_gyro_predicted_yaw_trim_deg: 0.0
+xuc_gyro_predicted_yaw_trim_deg: -1.0
 xuc_gyro_visibility_yaw_tolerance_deg: 8.0
 xuc_gyro_fire_min_consecutive_frames: 4
-# 候选成熟后逐帧择时：靠近现有预测偏航参考线或下一帧更差时触发。
-# 最多等待 50 ms 预算，到期在下一张有效帧决策；不阻塞跟踪，不绕过原门控。
-# 置 0 可恢复“候选成熟即触发”，用于现场对照。
-xuc_gyro_fire_selection_max_wait_ms: 50.0
+# No additional selection wait: issue when the current candidate reaches four frames.
+xuc_gyro_fire_selection_max_wait_ms: 0.0
 xuc_gyro_fire_selection_near_deg: 0.5
 # 候选窗口迟滞：门控抖动连续 N 帧（≈N/60 s）仍保留候选窗口，超过才复位。
 # 相位窗一次只开 0.2 s 量级，单帧抖动就清零重来会把开火机会按帧数乘性削掉
@@ -347,10 +341,10 @@ xuc_gyro_post_feed_recovery_ms: 0
 # 不能再用旧的 250 ms 或 feeder_stop 日志作为完整拨弹已结束的依据。
 # 这里只限制最小间隔，到期仍须通过当前帧候选与择时门控，不定时补发旧请求。
 # 完整拨弹时间只约束重复请求，不替代实弹标定的预测延迟 0.17 s。
-xuc_fire_cadence_fallback_ms: 550
-# 固定节拍试验：首发建立700ms时间网格；到点不合格就跳过，计时不停，恢复后等下一节点。
-# 候选在计时期间积累；关闭额外择时等待。0关闭试验，恢复上面的旧节奏策略。
-xuc_fire_fixed_interval_ms: 700.0
+xuc_fire_cadence_fallback_ms: 420
+# 每个模型累计成功发送15次请求后完整重建；0关闭。计的是请求，不是实测出膛数。
+# 重建期间禁火，待tracking与滤波可信后恢复；保留上次请求时刻并重新检查当前资格。
+xuc_model_rebuild_after_requests: 15
 # 开火脉冲保持时长（毫秒）。0 = 关闭（单帧脉冲，原行为）。
 # >0 时，开火上升沿后把 shoot 维持该时长，使下位机 AUTO 档（速度模式）拨弹轮
 # 获得确定性转动时间。实测单帧约 10ms 不足，一颗弹常需 3~4 次脉冲才能推入入口。
@@ -398,7 +392,7 @@ xuc_direct_pitch_filter_tau_ms: 100.0    # 仅使用关联成功且坐标一致�
 xuc_direct_pitch_hold_ms: 180.0          # 已保存双轴验收值：短丢帧保持
 xuc_direct_pitch_max_rate_dps: 10.0      # 约60FPS下每帧最多变化0.167°；首次控制/长丢失恢复从反馈角起步
 xuc_direct_pitch_error_gain: 1.35        # 恢复稳态控制能力；低于此前验证过的 1.65 增益
-xuc_projectile_speed_mps: 18.0        # 2026-10-24 现场值（小电脑同步）；2026-10-20 为 18.5；2026-10-16 实测（测速文件）：摩擦轮降速后弹速 17.3 m/s；2026-10-18复测：19m/s为0/20，17.3m/s为5/20；因果待更多样本确认
+xuc_projectile_speed_mps: 19.8        # 2026-10-20 现场值（小电脑同步）；2026-10-16 实测（测速文件）：摩擦轮降速后弹速 17.3 m/s；2026-10-18复测：19m/s为0/20，17.3m/s为5/20；因果待更多样本确认
 xuc_ballistic_reference_projectile_speed_mps: 10.0  # 0.91m/17cm实弹基准采集于2500rpm，禁止随当前转速重算
 xuc_ballistic_pitch_enabled: true
 xuc_camera_forward_of_muzzle_m: 0.06     # 实测：相机中心在炮口前方 6 cm
@@ -406,7 +400,7 @@ xuc_camera_above_muzzle_m: 0.04          # 实测：相机中心在炮口上方 
 xuc_ballistic_reference_camera_range_m: 0.91
 xuc_ballistic_reference_total_drop_m: 0.08639  # 实测 10 m/s 基准；固定瞄准轴偏差设为零
 xuc_ballistic_max_compensation_deg: 20.0    # 低弹速远距离补偿上限；下位机另保留25°/28°双层保护
-xuc_ballistic_pitch_trim_deg: -1.42    # 同侧高弹：在 4.6 m 处将弹着点降低约 2.5 cm
+xuc_ballistic_pitch_trim_deg: -0.8    # 同侧高弹：在 4.6 m 处将弹着点降低约 2.5 cm
 # 弹道仰角和陀螺飞行时间共用稳健的距离估计。
 # 以刚体近侧装甲面距离为准；原始 PnP 深度最多只提供有界的 5% 修正，
 # 避免倾斜装甲板导致瞄准点偏移数米。

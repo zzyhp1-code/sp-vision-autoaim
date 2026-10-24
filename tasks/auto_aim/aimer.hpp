@@ -28,9 +28,27 @@ struct AimPoint
 //                主 EKF 的整车 yaw 更稳，代价是不做单板精修。
 enum class AimGeometry { existing, whole_ekf };
 
+enum class AimPredictionFailure {
+  none, no_target, initial_selection, iterative_selection, trajectory, non_finite
+};
+
+inline const char * prediction_failure_name(AimPredictionFailure failure)
+{
+  switch (failure) {
+    case AimPredictionFailure::none: return "none";
+    case AimPredictionFailure::no_target: return "no_target";
+    case AimPredictionFailure::initial_selection: return "initial_selection";
+    case AimPredictionFailure::iterative_selection: return "iterative_selection";
+    case AimPredictionFailure::trajectory: return "trajectory";
+    case AimPredictionFailure::non_finite: return "non_finite";
+  }
+  return "unknown";
+}
+
 // 只做观测，不参与控制。
 struct AimPredictionTrace
 {
+  AimPredictionFailure failure = AimPredictionFailure::none;
   bool valid = false, converged = false;
   bool whole_ekf_geometry = false;
   int face_id = -1, iterations = 0;
@@ -59,6 +77,12 @@ public:
   // Applies the same bounded runtime correction to both speed branches.  Their
   // calibrated base values remain unchanged and are restored with zero.
   void set_delay_adjustment(double adjustment_s);
+
+  void reset_target()
+  {
+    lock_id_ = -1;
+    debug_aim_point = {false, Eigen::Vector4d::Zero()};
+  }
 
 private:
   double yaw_offset_;

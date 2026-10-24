@@ -100,8 +100,10 @@ void Solver::solve(Armor & armor) const
 }
 
 std::vector<cv::Point2f> Solver::reproject_armor(
-  const Eigen::Vector3d & xyz_in_world, double yaw, ArmorType type, ArmorName name) const
+  const Eigen::Vector3d & xyz_in_world, double yaw, ArmorType type, ArmorName name,
+  const Eigen::Matrix3d * gimbal2world) const
 {
+  const auto & rotation = gimbal2world ? *gimbal2world : R_gimbal2world_;
   auto sin_yaw = std::sin(yaw);
   auto cos_yaw = std::cos(yaw);
 
@@ -120,9 +122,9 @@ std::vector<cv::Point2f> Solver::reproject_armor(
   // get R_armor2camera t_armor2camera
   const Eigen::Vector3d & t_armor2world = xyz_in_world;
   Eigen::Matrix3d R_armor2camera =
-    R_camera2gimbal_.transpose() * R_gimbal2world_.transpose() * R_armor2world;
+    R_camera2gimbal_.transpose() * rotation.transpose() * R_armor2world;
   Eigen::Vector3d t_armor2camera =
-    R_camera2gimbal_.transpose() * (R_gimbal2world_.transpose() * t_armor2world - t_camera2gimbal_);
+    R_camera2gimbal_.transpose() * (rotation.transpose() * t_armor2world - t_camera2gimbal_);
 
   // get rvec tvec
   cv::Vec3d rvec;

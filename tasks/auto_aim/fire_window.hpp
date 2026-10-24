@@ -3,66 +3,130 @@
 
 #include <algorithm>
 #include <cmath>
+#include <chrono>
 #include <cstdint>
 #include <limits>
+#include <string>
 
 namespace auto_aim
 {
-// A time grid anchored by the first successful transmission. Poll every frame,
-// including target loss: a tick is consumed even when qualification is closed.
-class FixedFireInterval
+using FireClock = std::chrono::steady_clock;
+
+// Only a trusted, associated camera observation advances this clock. Prediction
+// frames and processing time never move the origin of a temporary-loss budget.
+struct FireObservationClock
 {
-public:
-  struct Tick
-  {
-    bool ready = false;
-    std::int64_t due_ns = 0;
-    std::int64_t skipped = 0;
-  };
+  std::uint64_t generation = 0;
+  FireClock::time_point image_time{};
 
-  static constexpr std::int64_t max_lateness_ns = 50000000;
-
-  Tick poll(std::int64_t now_ns, std::int64_t interval_ns)
+  void observe(std::uint64_t model, FireClock::time_point image, bool trusted_association)
   {
-    Tick tick;
-    if (interval_ns <= 0 || now_ns < 0) return tick;
-    if (!have_sent_) {
-      tick.ready = true;  // Initial acquisition; sent() anchors the grid once.
-      return tick;
-    }
-    if (now_ns < next_due_ns_) return tick;
-    const auto elapsed_ticks = (now_ns - next_due_ns_) / interval_ns + 1;
-    tick.due_ns = next_due_ns_ + (elapsed_ticks - 1) * interval_ns;
-    next_due_ns_ += elapsed_ticks * interval_ns;
-    // Do not issue stale ticks after a processing stall or replay missed slots.
-    tick.ready = elapsed_ticks == 1 && within_tick(now_ns, tick.due_ns);
-    tick.skipped = elapsed_ticks - (tick.ready ? 1 : 0);
-    return tick;
+    if (model != generation) { generation = model; image_time = {}; }
+    if (trusted_association && image > image_time) image_time = image;
   }
 
-  static bool within_tick(std::int64_t now_ns, std::int64_t due_ns)
+  double age_ms(FireClock::time_point now) const
   {
-    return due_ns == 0 ||
-      (now_ns >= due_ns && now_ns - due_ns <= max_lateness_ns);
+    return image_time == FireClock::time_point{} ? std::numeric_limits<double>::infinity()
+      : std::chrono::duration<double, std::milli>(now - image_time).count();
   }
 
-  void sent(std::int64_t tx_call_ns, std::int64_t interval_ns)
+  bool within(FireClock::time_point now, std::uint64_t model, double max_age_ms) const
   {
-    if (interval_ns <= 0 || tx_call_ns < 0 || (have_sent_ && tx_call_ns < last_sent_ns_)) return;
-    if (!have_sent_) next_due_ns_ = tx_call_ns + interval_ns;
-    last_sent_ns_ = tx_call_ns;
-    have_sent_ = true;
+    return model == generation && image_time != FireClock::time_point{} && now >= image_time &&
+      now - image_time <= std::chrono::duration_cast<FireClock::duration>(
+        std::chrono::duration<double, std::milli>(max_age_ms));
   }
-
-  bool have_sent() const { return have_sent_; }
-  std::int64_t last_sent_ns() const { return last_sent_ns_; }
-  std::int64_t next_due_ns() const { return next_due_ns_; }
-
-private:
-  bool have_sent_ = false;
-  std::int64_t last_sent_ns_ = 0;
-  std::int64_t next_due_ns_ = 0;
 };
+
+struct FireCandidateWindow
+{
+  bool active = false, sent = false;
+  int frames = 0, misses = 0, face = -1;
+  std::uint64_t generation = 0;
+  bool whole_ekf = false;
+  double face_yaw_rad = INFINITY;
+  FireClock::time_point since{};
+
+  void reset() { *this = FireCandidateWindow{}; }
+  bool matches(std::uint64_t model, int candidate_face, bool geometry) const
+  {
+    return active && generation == model && face == candidate_face && face >= 0 &&
+      whole_ekf == geometry;
+  }
+  bool can_continue(std::uint64_t model, int candidate_face, bool geometry, int required) const
+  {
+    return matches(model, candidate_face, geometry) && frames >= std::max(4, required) && !sent;
+  }
+  void update(
+    bool eligible, bool temporary_loss, std::uint64_t model, int candidate_face, bool geometry,
+    FireClock::time_point image, double face_yaw, int hold_frames)
+  {
+    if (active && !matches(model, candidate_face, geometry)) reset();
+    if (temporary_loss) {
+      // A gap can preserve an eligible mature window, never create/grow one.
+      if (!eligible || !can_continue(model, candidate_face, geometry, 4)) reset();
+      return;
+    }
+    if (eligible) {
+      if (!active) { active = true; since = image; frames = 0; }
+      generation = model; face = candidate_face; whole_ekf = geometry;
+      face_yaw_rad = face_yaw; misses = 0; ++frames;
+    } else if (!active || ++misses > hold_frames) {
+      reset();
+    }
+  }
+};
+
+// Candidate accumulation and every send path use the same named gates. Keeping
+// all failures (rather than one short-circuited reason) makes rejection auditable.
+struct FireRequestGates
+{
+  bool target = false, tracker = false, observation = false, model = false;
+  bool prediction = false, generation = false, face = false;
+  bool control = false, auto_mode = false, feedback = false, allow_shoot = false;
+  bool convergence = false, motion = false, cadence = false;
+  bool yaw = false, visibility = false, pitch = false, one_face = false, phase = false;
+  bool mature = false, unsent = false, timing = false;
+
+  std::string closed(bool qualification_only = false) const
+  {
+    std::string out;
+    const auto add = [&](bool open, const char * name) {
+      if (!open) { if (!out.empty()) out += ','; out += name; }
+    };
+    add(target, "target"); add(tracker, "tracker"); add(observation, "observation");
+    add(model, "model"); add(prediction, "prediction"); add(generation, "generation");
+    add(face, "face"); add(control, "control"); add(auto_mode, "auto");
+    add(feedback, "feedback"); add(convergence, "convergence"); add(motion, "motion");
+    add(allow_shoot, "allow_shoot");
+    add(cadence, "cadence"); add(yaw, "yaw"); add(visibility, "visibility");
+    add(pitch, "pitch"); add(one_face, "one_face"); add(phase, "phase");
+    if (!qualification_only) { add(mature, "mature"); add(unsent, "unsent"); add(timing, "timing"); }
+    return out;
+  }
+  bool candidate_allowed(bool temporary_loss = false) const
+  { return closed(true).empty() && (!temporary_loss || (mature && unsent)); }
+  bool request_allowed() const { return closed().empty(); }
+};
+
+inline FireRequestGates apply_fire_observation_gates(
+  FireRequestGates gates, const FireCandidateWindow & candidate,
+  const FireObservationClock & observation, FireClock::time_point now,
+  std::uint64_t generation, int face, bool whole_ekf, bool tracking, bool temporary_loss,
+  bool inhibit_temporary_loss, bool fresh_association, double max_age_ms, int required_frames)
+{
+  const bool same = candidate.matches(generation, face, whole_ekf);
+  gates.tracker = tracking || (temporary_loss && !inhibit_temporary_loss);
+  gates.observation = temporary_loss ? observation.within(now, generation, max_age_ms)
+                                    : fresh_association;
+  gates.generation = !candidate.active || candidate.generation == generation;
+  gates.face = face >= 0 && (!candidate.active || same);
+  gates.mature = same && candidate.frames >=
+    (temporary_loss ? std::max(4, required_frames) : required_frames);
+  gates.unsent = !candidate.sent;
+  return gates;
+}
 
 enum class FireTiming { stable_window, impact_phase, event_clock };
 
