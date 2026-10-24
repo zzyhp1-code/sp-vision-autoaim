@@ -30,6 +30,7 @@
 #include "tasks/auto_aim/robust_range_filter.hpp"
 #include "tasks/auto_aim/rotation_model_manager.hpp"
 #include "tasks/auto_aim/shot_delay_adapter.hpp"
+#include "tasks/auto_aim/stable_rotation_rate.hpp"
 #include "tasks/auto_aim/multithread/commandgener.hpp"
 #include "tasks/auto_aim/shooter.hpp"
 #include "tasks/auto_aim/solver.hpp"
@@ -84,6 +85,10 @@ int main(int argc, char * argv[])
   }
 
   const auto integration_yaml = YAML::LoadFile(config_path);
+  const std::string rotation_prediction_mode_name = integration_yaml["xuc_rotation_prediction_mode"]
+    ? integration_yaml["xuc_rotation_prediction_mode"].as<std::string>() : "off";
+  const auto rotation_prediction_mode = auto_aim::rotation_prediction_mode(rotation_prediction_mode_name);
+  const bool rotation_audit_enabled = rotation_prediction_mode != auto_aim::RotationPredictionMode::off;
   const bool competition_headless =
     integration_yaml["competition_headless"] &&
     integration_yaml["competition_headless"].as<bool>();
@@ -847,6 +852,14 @@ int main(int argc, char * argv[])
   auto_aim::Solver solver(config_path);
   auto_aim::Tracker tracker(config_path, solver);
   auto_aim::Aimer aimer(config_path);
+  auto_aim::Aimer rotation_audit_aimer(config_path);
+  auto_aim::StableRotationRate::Config stable_rotation_config;
+  if (integration_yaml["yaw_eskf_max_trusted_abs_rate_rad_s"])
+    stable_rotation_config.maximum_abs_rate = std::clamp(
+      integration_yaml["yaw_eskf_max_trusted_abs_rate_rad_s"].as<double>(), 0.5, 30.0);
+  auto_aim::StableRotationRate stable_rotation_rate(stable_rotation_config);
+  auto_aim::RotationPredictionEpoch rotation_prediction_epoch;
+  auto rotation_audit_last_log = std::chrono::steady_clock::time_point{};
   auto_aim::ShotDelayAdapter shot_delay_adapter(shot_delay_config);
   auto_aim::Shooter shooter(config_path);
   auto_aim::multithread::CommandGener commandgener(shooter, aimer, cboard, plotter, true);
@@ -905,6 +918,9 @@ int main(int argc, char * argv[])
     direct_pitch_max_rate_rad_s * 180.0 / M_PI, direct_pitch_hold_s * 1000.0);
   tools::logger()->info(
     "[AIMAUDIT] schema=1 prediction=AIMPRED observation=AIMOBS clock=steady_ns observation_tail_ms=100");
+  tools::logger()->info(
+    "[AIMROT] mode={} history_ms=2000 minimum_span_ms=1500 minimum_samples=30 continuous_audit={}",
+    rotation_prediction_mode_name, rotation_audit_enabled);
   tools::logger()->info(
     "[MODELREBUILD] enabled={} after_requests={} counter=matched_host_request cadence=preserve_last_request",
     xuc.enabled() && xuc_model_rebuild_after_requests > 0, xuc_model_rebuild_after_requests);
@@ -1165,6 +1181,7 @@ int main(int argc, char * argv[])
                 const auto adaptation = shot_delay_adapter.update(release_ms / 1000.0);
                 if (adaptation.accepted) {
                   aimer.set_delay_adjustment(shot_delay_adapter.delay_adjustment_s());
+                  rotation_audit_aimer.set_delay_adjustment(shot_delay_adapter.delay_adjustment_s());
                   if (adaptation.regime_change) {
                     tools::logger()->warn(
                       "[SHOTADAPT] persistent feeder-delay shift detected; "
@@ -1323,6 +1340,8 @@ int main(int argc, char * argv[])
       // Keep actuator smoothing, feeder pairing and the last-request timestamp.
       tracker.reset();
       aimer.reset_target();
+      rotation_audit_aimer.reset_target();
+      stable_rotation_rate.reset();
       rotation_model_manager.reset();
       gyro_phase_scheduler.reset();
       gyro_face_selector.reset();
@@ -1649,10 +1668,58 @@ int main(int argc, char * argv[])
 
     // 小陀螺时用主 EKF 的整车几何选板/预测（AimGeometry::whole_ekf），
     // 静止/低速仍走原来的 ekf_x() 路径；trace 只用于诊断。
+    const auto rotation_compute_started = std::chrono::steady_clock::now();
+    const int64_t rotation_image_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+      t.time_since_epoch()).count();
+    bool rotation_pose_trusted = false;
+    double rotation_raw_rate = NAN;
+    if (rotation_audit_enabled) {
+      const bool rotational_target = !targets.empty() && targets.front().armor_num() == 4 &&
+        targets.front().name != auto_aim::ArmorName::outpost &&
+        targets.front().ekf().x.size() == 11 && targets.front().ekf().x.allFinite();
+      if (!rotational_target ||
+          rotation_model.mode != auto_aim::RotationModelManager::Mode::high_speed_phase) {
+        stable_rotation_rate.reset();
+      } else {
+        const auto & raw = targets.front().ekf().x;
+        rotation_raw_rate = raw[7];
+        rotation_pose_trusted = tracker.state() == "tracking" && tracker_converged &&
+          yaw_motion_model_trusted && associated_armor != nullptr &&
+          associated_armor->xyz_in_gimbal.allFinite() && associated_armor->xyz_in_world.allFinite() &&
+          associated_armor->ypr_in_world.allFinite() && solver.R_gimbal2world().allFinite() &&
+          associated_armor->xyz_in_gimbal.x() > 0.10 &&
+          (associated_armor->xyz_in_world - solver.R_gimbal2world() *
+            associated_armor->xyz_in_gimbal).norm() <= 1e-3;
+        stable_rotation_rate.observe(tracker.model_generation(), rotation_image_ns, raw[6], raw[7],
+          rotation_pose_trusted);
+      }
+    }
+    const auto rotation_evaluation_time = std::chrono::steady_clock::now();
+    const auto rotation_estimate = stable_rotation_rate.estimate(
+      std::chrono::duration_cast<std::chrono::nanoseconds>(rotation_evaluation_time.time_since_epoch()).count(),
+      rotation_raw_rate);
+    auto_aim::AimPredictionContext rotation_context;
+    if (auto_aim::uses_stable_rotation(
+          rotation_prediction_mode,
+          rotation_model.mode == auto_aim::RotationModelManager::Mode::high_speed_phase,
+          rotation_estimate.ready)) {
+      rotation_context.rotation_rate_rad_s = rotation_estimate.rate_rad_s;
+    }
+    const double rotation_estimator_us = std::chrono::duration<double, std::micro>(
+      std::chrono::steady_clock::now() - rotation_compute_started).count();
     auto_aim::AimPredictionTrace native_fire_prediction;
+    const double aim_input_bullet_speed = cboard.bullet_speed;
     auto command = aimer.aim(
-      targets, t, cboard.bullet_speed, true, &native_fire_prediction,
-      auto_aim::AimGeometry::whole_ekf);  // to_now=true，生成当前时刻命令
+      targets, t, aim_input_bullet_speed, true, &native_fire_prediction,
+      auto_aim::AimGeometry::whole_ekf, rotation_context);
+    const auto native_aim_command = command;
+    const auto native_aim_point = aimer.debug_aim_point;
+    if (rotation_prediction_epoch.update(rotation_prediction_mode,
+          native_fire_prediction.rotation_override_used, rotation_estimate.epoch)) {
+      fire_candidate_window.reset();
+      xuc_fire_window_selector.reset();
+      xuc_shoot_pulse_active = false;
+    }
     const bool native_prediction_valid =
       command.control && native_fire_prediction.valid && !targets.empty() &&
       std::isfinite(command.yaw) && std::isfinite(command.pitch);
@@ -2124,6 +2191,14 @@ int main(int argc, char * argv[])
       gates.model = model_rebuild.fire_allowed() && tracker_converged &&
         yaw_motion_model_trusted;
       gates.prediction = native_prediction_valid && native_fire_prediction.valid;
+      if (native_fire_prediction.rotation_override_used) {
+        const int64_t now_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+          now.time_since_epoch()).count();
+        gates.prediction = gates.prediction &&
+          rotation_estimate.generation == tracker.model_generation() &&
+          now_ns >= rotation_estimate.image_ns &&
+          now_ns - rotation_estimate.image_ns <= int64_t{50000000};
+      }
       gates.control = command.control && std::isfinite(command.yaw) && std::isfinite(command.pitch);
       gates.auto_mode = mode == io::Mode::auto_aim &&
         (!xuc.enabled() || xuc.mode() == static_cast<uint8_t>(io::Mode::auto_aim));
@@ -2173,7 +2248,9 @@ int main(int argc, char * argv[])
         fire_model_visibility_error_rad = NAN;
         if (gates.model && gates.prediction && gates.face && !img.empty()) {
           auto visible_target = targets.front();
-          visible_target.predict(now);
+          if (native_fire_prediction.rotation_override_used)
+            visible_target.predict_for_aim(now, native_fire_prediction.rotation_rate_rad_s);
+          else visible_target.predict(now);
           const auto faces = candidate_geometry ? visible_target.whole_ekf_armor_xyza_list()
                                                : visible_target.armor_xyza_list();
           if (candidate_face_id < static_cast<int>(faces.size())) {
@@ -3412,6 +3489,9 @@ int main(int argc, char * argv[])
           {"source", fire_temporary_loss ? "predicted" : "measured"},
           {"observation_age_ms", fire_observation_clock.age_ms(shot_diag_issue_time)},
           {"prediction_failure", auto_aim::prediction_failure_name(native_fire_prediction.failure)},
+          {"rotation_source", native_fire_prediction.rotation_override_used ? "stable_main_phase" : "legacy"},
+          {"rotation_rate_rad_s", native_fire_prediction.rotation_rate_rad_s},
+          {"rotation_epoch", rotation_estimate.epoch},
           {"image_ns", image_ns}, {"issue_ns", issue_ns},
           {"tx_call_ns", tx_call_matches ? tx_call_ns : int64_t{0}},
           {"valid", native_fire_prediction.valid},
@@ -3488,11 +3568,77 @@ int main(int argc, char * argv[])
       log_fire_gates(send_gates, send_now);
     }
 
+    // This entire comparison is AFTER the production send. The independent
+    // Aimer cannot change production lock state, candidates, commands or counters.
+    const auto rotation_audit_started = std::chrono::steady_clock::now();
+    auto_aim::AimPredictionTrace comparison_prediction;
+    auto_aim::AimPoint comparison_point{false, Eigen::Vector4d::Zero()};
+    io::Command comparison_command{false, false, 0, 0};
+    const bool rotation_comparison_evaluated = rotation_audit_enabled &&
+      rotation_model.mode == auto_aim::RotationModelManager::Mode::high_speed_phase &&
+      native_fire_prediction.whole_ekf_geometry;
+    if (rotation_comparison_evaluated) {
+      auto_aim::AimPredictionContext comparison_context;
+      comparison_context.evaluation_time = std::chrono::steady_clock::time_point(
+        std::chrono::nanoseconds(native_fire_prediction.evaluation_ns));
+      if (rotation_prediction_mode == auto_aim::RotationPredictionMode::shadow &&
+          rotation_estimate.ready)
+        comparison_context.rotation_rate_rad_s = rotation_estimate.rate_rad_s;
+      comparison_command = rotation_audit_aimer.aim(
+        targets, t, aim_input_bullet_speed, true, &comparison_prediction,
+        auto_aim::AimGeometry::whole_ekf, comparison_context);
+      comparison_point = rotation_audit_aimer.debug_aim_point;
+    }
+    const double rotation_compute_us = rotation_estimator_us +
+      std::chrono::duration<double, std::micro>(
+        std::chrono::steady_clock::now() - rotation_audit_started).count();
+    const auto rotation_trace_json = [&](const auto_aim::AimPredictionTrace & trace,
+                                        const auto_aim::AimPoint & point,
+                                        const io::Command & aim_command) {
+      nlohmann::json out = {
+        {"valid", trace.valid}, {"failure", auto_aim::prediction_failure_name(trace.failure)},
+        {"converged", trace.converged}, {"face", trace.face_id}, {"iterations", trace.iterations},
+        {"whole_ekf", trace.whole_ekf_geometry}, {"evaluation_ns", trace.evaluation_ns},
+        {"base_prediction_ns", trace.base_prediction_ns}, {"prediction_ns", trace.prediction_ns},
+        {"rotation_override", trace.rotation_override_used}, {"rotation_rate_rad_s", trace.rotation_rate_rad_s},
+        {"delay_ms", trace.delay_s * 1000.0}, {"speed_mps", trace.speed_mps},
+        {"flight_used_ms", trace.flight_time_used_s * 1000.0},
+        {"flight_solved_ms", trace.flight_time_s * 1000.0},
+        {"yaw_rad", aim_command.yaw}, {"pitch_rad", aim_command.pitch},
+        {"aim_xyza", nlohmann::json::array()}};
+      if (trace.valid && point.valid) out["aim_xyza"] = aim_audit_values(point.xyza);
+      return out;
+    };
+    nlohmann::json rotation_audit;
+    if (rotation_audit_enabled) {
+      rotation_audit = {
+        {"mode", rotation_prediction_mode_name}, {"evaluated", rotation_comparison_evaluated},
+        {"ready", rotation_estimate.ready}, {"reason", rotation_estimate.reason},
+        {"epoch", rotation_estimate.epoch}, {"generation", rotation_estimate.generation},
+        {"sample_image_ns", rotation_estimate.image_ns}, {"samples", rotation_estimate.samples},
+        {"span_ms", rotation_estimate.span_s * 1000.0}, {"age_ms", rotation_estimate.age_s * 1000.0},
+        {"fit_rms_deg", rotation_estimate.rms_rad * 180.0 / M_PI},
+        {"fit_rate_rad_s", rotation_estimate.rate_rad_s},
+        {"trusted_sample", rotation_pose_trusted}, {"compute_us", rotation_compute_us},
+        {"production", rotation_trace_json(native_fire_prediction, native_aim_point, native_aim_command)},
+        {"comparison", rotation_trace_json(comparison_prediction, comparison_point, comparison_command)}};
+      const auto audit_now = std::chrono::steady_clock::now();
+      if (shot_rising_edge_this_frame || audit_now - rotation_audit_last_log >= std::chrono::milliseconds(250)) {
+        auto summary = rotation_audit;
+        summary["schema"] = 1; summary["frame"] = aim_audit_frame_seq;
+        summary["image_ns"] = rotation_image_ns;
+        summary["model_generation"] = tracker.model_generation();
+        summary["shot_id"] = shot_rising_edge_this_frame ? xuc_pending_shot_id : uint64_t{0};
+        tools::logger()->info("[AIMROT] {}", summary.dump());
+        rotation_audit_last_log = audit_now;
+      }
+    }
+
     // Future camera frames are the retrospective reference. Preserve gaps and
     // association validity explicitly; held model states are not fresh poses.
     const int64_t aim_audit_image_ns =
       std::chrono::duration_cast<std::chrono::nanoseconds>(t.time_since_epoch()).count();
-    if (xuc.enabled() && aim_audit_image_ns <= aim_audit_observe_until_ns) {
+    if (xuc.enabled() && (rotation_audit_enabled || aim_audit_image_ns <= aim_audit_observe_until_ns)) {
       nlohmann::json observation_log = {
         {"schema", 1}, {"frame", aim_audit_frame_seq}, {"segment", aim_audit_segment},
         {"image_ns", aim_audit_image_ns}, {"tracker", tracker.state()},
@@ -3511,6 +3657,9 @@ int main(int argc, char * argv[])
         observation_log["effective_state"] = aim_audit_values(audit_target.ekf_x());
         observation_log["target_name"] = static_cast<int>(audit_target.name);
         observation_log["armor_count"] = audit_target.armor_num();
+        observation_log["armor_type"] = static_cast<int>(audit_target.armor_type);
+        observation_log["jumped"] = audit_target.jumped;
+        observation_log["last_id"] = audit_target.last_id;
         if (tracker.state() != "temp_lost" && associated_detection_index >= 0 &&
             associated_detection_index < static_cast<int>(armors.size())) {
           auto associated = armors.begin();
@@ -3527,6 +3676,13 @@ int main(int argc, char * argv[])
             observation_log["measured_center_px"] = {measured.center.x, measured.center.y};
           }
         }
+      }
+      if (rotation_audit_enabled) {
+        observation_log["rotation"] = rotation_audit;
+        observation_log["tracker_converged"] = tracker_converged;
+        observation_log["yaw_motion_trusted"] = yaw_motion_model_trusted;
+        observation_log["high_speed_mode"] =
+          rotation_model.mode == auto_aim::RotationModelManager::Mode::high_speed_phase;
       }
       tools::logger()->info("[AIMOBS] {}", observation_log.dump());
     }

@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <limits>
 #include <numeric>
+#include <stdexcept>
 #include <utility>
 
 #include "measurement_noise.hpp"
@@ -67,7 +68,10 @@ Target::Target(
   armor_motion_filters_[0].reset(xyz.head<3>());
 }
 
-Target::Target(double x, double vyaw, double radius, double h) : armor_num_(4)
+Target::Target(double x, double vyaw, double radius, double h)
+: name(ArmorName::two), armor_type(ArmorType::small), priority(ArmorPriority::first),
+  jumped(true), last_id(0), armor_num_(4), switch_count_(0), update_count_(0),
+  is_switch_(false), is_converged_(false), t_{}
 {
   Eigen::VectorXd x0{{x, 0, 0, 0, 0, 0, 0, vyaw, radius, 0, h}};
   Eigen::VectorXd P0_dig{{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}};
@@ -84,11 +88,37 @@ Target::Target(double x, double vyaw, double radius, double h) : armor_num_(4)
   yaw_eskf_.reset(0.0, vyaw);
 }
 
+Target Target::prediction_snapshot(
+  const Eigen::VectorXd & state, std::chrono::steady_clock::time_point image,
+  ArmorName name, ArmorType type, bool jumped, int last_id)
+{
+  if (state.size() != 11 || !state.allFinite())
+    throw std::invalid_argument("prediction snapshot requires a finite 11-state main EKF");
+  Target out(1.0, state[7], 0.26, 0.0);
+  out.ekf_.x = state;
+  out.t_ = image;
+  out.name = name; out.armor_type = type;
+  out.jumped = jumped; out.last_id = last_id;
+  out.yaw_eskf_.reset(state[6], state[7]);
+  return out;
+}
+
 void Target::predict(std::chrono::steady_clock::time_point t)
 {
   auto dt = tools::delta_time(t, t_);
   predict(dt);
   t_ = t;
+}
+
+void Target::predict_for_aim(std::chrono::steady_clock::time_point t, double rotation_rate)
+{
+  const double dt = tools::delta_time(t, t_);
+  const double phase = ekf_.x[6];
+  predict(t);
+  if (std::isfinite(rotation_rate) && dt >= 0.0) {
+    ekf_.x[6] = tools::limit_rad(phase + rotation_rate * dt);
+    ekf_.x[7] = rotation_rate;
+  }
 }
 
 void Target::predict(double dt)

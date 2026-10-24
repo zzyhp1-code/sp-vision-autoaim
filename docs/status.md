@@ -1,5 +1,29 @@
 # 当前状态
 
+## 2026-10-25 稳定转速预测：影子对照已部署，未启用
+
+按用户选择，第一版只处理稳定转速，变速或反转回退原预测；先影子对照，不改现有开火行为。
+
+- 新增独立估速器 `tasks/auto_aim/stable_rotation_rate.hpp`：只吃同一模型代际、可信关联、
+  已收敛且 yaw 可信的**图像时刻**主 EKF 相位；2 s 窗口、≥30 点、跨度 ≥1.5 s 的线性拟合，
+  并对 RMS、前后半窗斜率差、方向一致性、速率上限和 50 ms 样本年龄逐项把关。换面不折叠
+  相位，凡不满足即回退。预测帧与暂失帧都不写历史。
+- `Aimer` 新增可选预测上下文。命中时只替换预测**副本**的角速度：以当前主 EKF 相位为起点
+  外推，延迟预测与全部弹道迭代共用同一速率；平移、几何与在线模型不变。旧调用默认行为不变。
+- `src/standard.cpp` 增加 `off / shadow / active` 三档。`shadow` 在**原发送之后**用独立
+  Aimer 计算对照预测，不触碰生产指令、候选窗口、请求计数或重建状态；`active` 才替换
+  生产速率，并在来源切换时重新累计候选四帧。候选与发送末端额外复核样本代际与 50 ms 年龄。
+- 现场配置仅新增 `xuc_rotation_prediction_mode: shadow`，其余键与小电脑逐项一致；
+  `[AIMROT]`、`AIMOBS` 已带新旧预测、回退原因、样本数、跨度、拟合 RMS、速率和计算耗时。
+- 验证：小电脑 Release 构建 `standard` 与全部测试成功；`stable_rotation_rate_test`、
+  `rotation_prediction_test`、`fire_window_test`、`model_rebuild_test`、`yaw_eskf_test`、
+  `iterated_ekf_test`、`ekf_consistency_test`、`aimer_prediction_test`、
+  `tracker_reset_test` 九项全部通过。`rotation_prediction_test` 断言影子与 `off` 的
+  指令、预测面、预测时间逐位相同，模型对象未被修改，候选与重建计数一致。
+- 未完成：尚无现场影子数据，因此没有切换 `active` 的证据；合并门槛（两轮各 ≥30 个可匹配
+  样本、各轮 MAE 与 P95 不劣、合并 MAE 至少降 10%、有效预测比例不下降）未开始评估。
+  现场程序由用户启动；本轮未启动自瞄、电机或发射程序，未推送 GitHub。
+
 ## 2026-10-25 稳定旋转预测改进前的现场基线
 
 已重新只读核对小电脑 `/home/rm/sp_vision`。视觉运行逻辑与本地一致，回填现场已有的

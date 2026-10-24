@@ -44,8 +44,16 @@ public:
     Eigen::VectorXd P0_dig, const YawESKF::Config & yaw_eskf_config,
     const IteratedUpdateConfig & iterated_update_config);
   Target(double x, double vyaw, double radius, double h);
+  // Offline Aimer replay only. This does not reconstruct an online posterior
+  // covariance, association history or convergence/trust state.
+  static Target prediction_snapshot(
+    const Eigen::VectorXd & state, std::chrono::steady_clock::time_point image,
+    ArmorName name, ArmorType type, bool jumped, int last_id);
 
   void predict(std::chrono::steady_clock::time_point t);
+  // Aimer copies only: preserve translation/covariance propagation and replace
+  // the angular extrapolation. Never call this on Tracker's online estimator.
+  void predict_for_aim(std::chrono::steady_clock::time_point t, double rotation_rate);
   void predict(double dt);
   void update(const Armor & armor);
   void update(const Armor & armor, int armor_id);
