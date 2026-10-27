@@ -1,4 +1,4 @@
-﻿# 6500 rpm 四装甲“小陀螺”实弹复测配置；允许 shoot=1，仅在现场安全确认后使用。
+# 6500 rpm 四装甲“小陀螺”实弹复测配置；允许 shoot=1，仅在现场安全确认后使用。
 # 2026-09-06 单因素修正：高速预测延迟增加 50 ms，使当前反转目标提前约 4°相位触发。
 # 2026-09-12 抬高靶复算：靶高已由视觉闭环吸收，撤销额外 0.60° 固定上抬。
 # 19.36 m/s 由 3200 rpm 实弹等效 9.53 m/s 按转速线性外推，须用实弹/测速仪复核。
@@ -312,6 +312,9 @@ xuc_gyro_require_event_lock_for_fire: false
 # 直接门控的预测偏航容差。center_follow 下瞄准点超前量 ≤ r/d ≈ 3.9°，1.5° 会把
 # 大部分帧挡在门外，放 3.0° 让直接门控真正接管。
 xuc_gyro_predicted_yaw_tolerance_deg: 3.0
+# 真正的命中窗口：弹到瞬间最近装甲板中心与炮口线的夹角上限（度）。
+# 板半角约 atan(6.75cm/距离)，3.45 m 处约 1.1°；0 = 关闭，恢复旧行为。
+xuc_fire_impact_alignment_deg: 1.0
 xuc_gyro_predicted_yaw_trim_deg: -1.0
 xuc_gyro_visibility_yaw_tolerance_deg: 8.0
 xuc_gyro_fire_min_consecutive_frames: 3

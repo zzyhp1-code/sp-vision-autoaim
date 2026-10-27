@@ -118,6 +118,10 @@ struct FireRequestGates
   // shootable cone is a missing opportunity, not a failed model, so it must not
   // erase qualification already accumulated for this model.
   bool aim = false;
+  // Is a plate centre actually on the bore line at the predicted impact instant?
+  // Send-only for the same reason: rejecting a bad arrival must not cost the
+  // accumulated confirmation, only the shot.
+  bool alignment = false;
 
   std::string closed(bool qualification_only = false) const
   {
@@ -136,7 +140,7 @@ struct FireRequestGates
       // Cooldown and "aim exists right now" belong to the SEND decision only.
       // Keeping cadence in the qualification set made a 750 ms cooldown also
       // stop frame confirmation, so every shot paid cooldown + maturity again.
-      add(cadence, "cadence"); add(aim, "aim");
+      add(cadence, "cadence"); add(aim, "aim"); add(alignment, "alignment");
       add(mature, "mature"); add(unsent, "unsent"); add(timing, "timing");
     }
     return out;

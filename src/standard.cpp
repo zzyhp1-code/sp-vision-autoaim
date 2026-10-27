@@ -500,6 +500,15 @@ int main(int argc, char * argv[])
        ? std::clamp(
            integration_yaml["xuc_gyro_predicted_yaw_trim_deg"].as<double>(), -5.0, 5.0)
        : 0.0) * M_PI / 180.0;
+  // True hit window, measured from the plate CENTRE against the bore at the
+  // predicted impact instant. 0 disables the gate and restores prior behaviour.
+  // The plate half angle is atan(6.75 cm / range) ~ 1.1 deg at 3.45 m, so a
+  // tolerance near 1 deg keeps only arrivals that can physically land.
+  const double xuc_fire_impact_alignment_rad =
+    (integration_yaml["xuc_fire_impact_alignment_deg"]
+       ? std::clamp(
+           integration_yaml["xuc_fire_impact_alignment_deg"].as<double>(), 0.0, 10.0)
+       : 0.0) * M_PI / 180.0;
   const double xuc_gyro_visibility_yaw_tolerance_rad =
     (integration_yaml["xuc_gyro_visibility_yaw_tolerance_deg"]
        ? std::clamp(
@@ -2493,6 +2502,7 @@ int main(int argc, char * argv[])
     auto_aim::FireRequestGates frame_fire_gates;
     bool fire_predictive_route = false;
     bool fire_timing_ready = false;
+    double fire_impact_alignment_rad = NAN;
     double fire_actual_predicted_yaw_error_rad = NAN;
     double fire_model_visibility_error_rad = NAN;
     const auto evaluate_fire_gates = [&](auto_aim::FireClock::time_point now, bool continuation = false) {
@@ -2630,7 +2640,7 @@ int main(int argc, char * argv[])
           "pred_failure={} pred_yaw_error_deg={:+.3f} measured_yaw_error_deg={:+.3f} "
           "model_visibility_error_deg={:+.3f} measured_pitch_error_deg={:+.3f} "
           "held_pitch_error_deg={:+.3f} yaw_fresh={} pitch_fresh={} "
-          "closed=[{}] blocked_frames={}",
+          "impact_alignment_deg={:+.3f} closed=[{}] blocked_frames={}",
           source, tracker.state(), fire_observation_clock.age_ms(now), tracker.model_generation(),
           fire_candidate_window.generation, candidate_face_id, fire_candidate_window.face,
           fire_candidate_window.frames, fire_candidate_window.sent, failure,
@@ -2639,7 +2649,8 @@ int main(int argc, char * argv[])
           fire_model_visibility_error_rad * 180.0 / M_PI,
           direct_pitch_pixel_error_rad * 180.0 / M_PI,
           (command.pitch - xuc.imu_pitch()) * 180.0 / M_PI,
-          direct_yaw_measurement_fresh, direct_pitch_measurement_fresh, closed,
+          direct_yaw_measurement_fresh, direct_pitch_measurement_fresh,
+          fire_impact_alignment_rad * 180.0 / M_PI, closed,
           fire_gate_blocked_frames);
         fire_gate_last_state = state;
         fire_gate_last_log = now;
@@ -3029,6 +3040,35 @@ int main(int argc, char * argv[])
           xuc_gyro_visibility_yaw_tolerance_rad);
       frame_fire_gates.pitch = direct_pitch_measurement_fresh &&
         std::abs(direct_pitch_pixel_error_rad) <= xuc_fire_pitch_tolerance_rad;
+      // Real hit window: is a plate CENTRE on the bore at the predicted impact
+      // instant? The bore follows the commanded yaw, so carry the current static
+      // corrections forward by the predicted shift of the vehicle centre.
+      if (xuc_fire_impact_alignment_rad > 0.0 && !targets.empty() &&
+          native_fire_prediction.valid && native_fire_prediction.prediction_ns > 0) {
+        auto alignment_target = targets.front();
+        alignment_target.predict(std::chrono::steady_clock::time_point(
+          std::chrono::nanoseconds(native_fire_prediction.prediction_ns)));
+        const auto faces = native_fire_prediction.whole_ekf_geometry
+          ? alignment_target.whole_ekf_armor_xyza_list() : alignment_target.armor_xyza_list();
+        const auto & state_now = targets.front().ekf().x;
+        const auto & state_future = alignment_target.ekf().x;
+        if (!faces.empty() && state_now.size() >= 3 && state_future.size() >= 3) {
+          const double centre_now = std::atan2(state_now[2], state_now[0]);
+          const double centre_future = std::atan2(state_future[2], state_future[0]);
+          const double command_future =
+            command.yaw + std::remainder(centre_future - centre_now, 2.0 * M_PI);
+          double nearest = INFINITY;
+          for (const auto & face : faces) {
+            if (!face.allFinite()) continue;
+            nearest = std::min(nearest, std::abs(std::remainder(
+              std::atan2(face[1], face[0]) - command_future, 2.0 * M_PI)));
+          }
+          if (std::isfinite(nearest)) fire_impact_alignment_rad = nearest;
+        }
+      }
+      frame_fire_gates.alignment = !(xuc_fire_impact_alignment_rad > 0.0) ||
+        (std::isfinite(fire_impact_alignment_rad) &&
+         fire_impact_alignment_rad <= xuc_fire_impact_alignment_rad);
       const auto qualification_gates = evaluate_fire_gates(std::chrono::steady_clock::now());
       const bool fire_context_valid = qualification_gates.target && qualification_gates.tracker &&
         qualification_gates.observation && qualification_gates.model && qualification_gates.prediction &&
