@@ -1,0 +1,18 @@
+# Managed by sp-vision boot installer
+[Unit]
+Description=Start existing SP vision at boot after automatic desktop login
+
+[Service]
+Type=simple
+WorkingDirectory=@PROJECT@
+ExecStart=/usr/bin/python3 "@PROJECT@/tools/boot_start_vision.py"
+Environment=PYTHONUNBUFFERED=1
+Environment=PATH=/usr/local/bin:/usr/bin:/bin
+UnsetEnvironment=LD_PRELOAD LD_LIBRARY_PATH PYTHONPATH BASH_ENV ENV
+Restart=on-failure
+RestartSec=5
+KillMode=mixed
+TimeoutStopSec=20
+
+[Install]
+WantedBy=default.target

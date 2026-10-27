@@ -216,16 +216,17 @@ YOLO26::YOLO26(const std::string & config_path, bool debug)
   ov::preprocess::PrePostProcessor ppp(model);
   auto & input = ppp.input();
 
-  // 🚀 优化3: 配置输入为RGB U8格式，利用OpenVINO的硬件加速预处理
+  // Camera/host tensor is BGR; the exported model requests reversed input channels.
   input.tensor()
     .set_element_type(ov::element::u8)
     .set_shape({1, 640, 640, 3})
     .set_layout("NHWC")
-    .set_color_format(ov::preprocess::ColorFormat::RGB);
+    .set_color_format(ov::preprocess::ColorFormat::BGR);
 
   input.model().set_layout("NCHW");
 
   input.preprocess()
+    .convert_color(ov::preprocess::ColorFormat::RGB)
     .convert_element_type(ov::element::f32)
     .scale(255.0);
 
@@ -745,14 +746,12 @@ void YOLO26::draw_detections(
 
   cv::resize(detection, detection, {}, 0.5, 0.5);
 
-  // 相机输出是RGB格式，imshow需要BGR格式，所以需要转换
-  cv::Mat bgr_detection;
-  cv::cvtColor(detection, bgr_detection, cv::COLOR_RGB2BGR);
+  // 相机/驱动统一输出 BGR，imshow 与 imwrite 直接可用，无需再转
   static int debug_image_counter = 0;
   if (++debug_image_counter % 50 == 0) {
-    cv::imwrite("imgs/yolo26_debug_latest.jpg", bgr_detection);
+    cv::imwrite("imgs/yolo26_debug_latest.jpg", detection);
   }
-  cv::imshow("YOLO26 Detection", bgr_detection);
+  cv::imshow("YOLO26 Detection", detection);
 }
 
 void YOLO26::save(const Armor & armor) const
@@ -760,15 +759,14 @@ void YOLO26::save(const Armor & armor) const
   auto file_name = fmt::format("{:%Y-%m-%d_%H-%M-%S}", std::chrono::system_clock::now());
   auto img_path = fmt::format("{}/{}_{}.jpg", save_path_, armor.name, file_name);
 
-  // 相机输出是RGB格式，需要转换为BGR才能正确保存
-  cv::Mat bgr_img;
-  cv::cvtColor(tmp_img_, bgr_img, cv::COLOR_RGB2BGR);
-  cv::imwrite(img_path, bgr_img);
+  // tmp_img_ 已经是 BGR，直接写盘
+  cv::imwrite(img_path, tmp_img_);
 }
 
-bool YOLO26::refine_color(Armor & armor, const cv::Mat & rgb_img, int frame_count)
+bool YOLO26::refine_color(Armor & armor, const cv::Mat & bgr_img_in, int frame_count)
 {
-  if (rgb_img.empty() || rgb_img.type() != CV_8UC3 || armor.points.size() != 4) return false;
+  if (bgr_img_in.empty() || bgr_img_in.type() != CV_8UC3 || armor.points.size() != 4) return false;
+  const cv::Mat & bgr_img = bgr_img_in;
 
   const double left_length = cv::norm(armor.points[3] - armor.points[0]);
   const double right_length = cv::norm(armor.points[2] - armor.points[1]);
@@ -789,7 +787,7 @@ bool YOLO26::refine_color(Armor & armor, const cv::Mat & rgb_img, int frame_coun
     int count = 0;
   };
 
-  const cv::Rect image_bounds(0, 0, rgb_img.cols, rgb_img.rows);
+  const cv::Rect image_bounds(0, 0, bgr_img.cols, bgr_img.rows);
   const auto sample_bar = [&](const cv::Point2f & p0, const cv::Point2f & p1) {
     BarColorStats stats;
     std::vector<cv::Point2f> endpoints{p0, p1};
@@ -812,13 +810,14 @@ bool YOLO26::refine_color(Armor & armor, const cv::Mat & rgb_img, int frame_coun
     std::vector<double> samples;
     samples.reserve(static_cast<size_t>(roi.area() / 2));
     for (int y = 0; y < roi.height; ++y) {
-      const auto * rgb = rgb_img.ptr<cv::Vec3b>(y + roi.y);
+      const auto * bgr = bgr_img.ptr<cv::Vec3b>(y + roi.y);
       const auto * m = mask.ptr<uint8_t>(y);
       for (int x = 0; x < roi.width; ++x) {
         if (m[x] == 0) continue;
-        const int red = rgb[x + roi.x][0];
-        const int green = rgb[x + roi.x][1];
-        const int blue = rgb[x + roi.x][2];
+        // cv::Mat is BGR throughout this project (camera driver included).
+        const int blue = bgr[x + roi.x][0];
+        const int green = bgr[x + roi.x][1];
+        const int red = bgr[x + roi.x][2];
         const int peak = std::max(red, blue);
         const int chroma = red - blue;
         if (peak < color_min_brightness_ || std::abs(chroma) < 4) continue;

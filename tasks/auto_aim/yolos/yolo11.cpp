@@ -153,7 +153,7 @@ YOLO11::YOLO11(const std::string & config_path, bool debug)
         .set_element_type(ov::element::u8)
         .set_shape({1, 640, 640, 3})
         .set_layout("NHWC")
-        .set_color_format(ov::preprocess::ColorFormat::RGB);
+        .set_color_format(ov::preprocess::ColorFormat::BGR);
 
     input.model().set_layout("NCHW");
 
@@ -519,8 +519,7 @@ void YOLO11::draw_detections(const cv::Mat & img, const std::list<Armor> & armor
         cv::rectangle(detection, roi_, {0, 255, 0}, 2); 
     }
     cv::resize(detection, detection, {}, 0.5, 0.5);
-    // 输入图像为 RGB 格式，imshow 需要 BGR 格式
-    cv::cvtColor(detection, detection, cv::COLOR_RGB2BGR);
+    // 输入图像为 BGR（相机驱动统一输出 BGR），imshow 直接可用
     cv::imshow("detection", detection);
 }
 
@@ -529,10 +528,8 @@ void YOLO11::save(const Armor & armor) const {
     auto file_name = fmt::format("{:%Y-%m-%d_%H-%M-%S}", std::chrono::system_clock::now());
     auto img_path = fmt::format("{}/{}_{}.jpg", save_path_, armor.name, file_name);
 
-    // 相机输出是RGB格式，需要转换为BGR才能正确保存
-    cv::Mat bgr_img;
-    cv::cvtColor(tmp_img_, bgr_img, cv::COLOR_RGB2BGR);
-    cv::imwrite(img_path, bgr_img);
+    // tmp_img_ 已是 BGR，直接写盘
+    cv::imwrite(img_path, tmp_img_);
 }
 
 

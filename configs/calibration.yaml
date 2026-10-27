@@ -8,6 +8,9 @@
 #####-----标定板参数-----#####
 pattern_cols: 9                  # 棋盘格内角点列数（宽方向10格）
 pattern_rows: 7                  # 棋盘格内角点行数（高方向8格）
+capture_pose_stable_window_ms: 300
+capture_pose_stable_range_deg: 0.30
+capture_max_frame_age_ms: 100
 square_size_mm: 20               # 棋盘格方格边长（毫米），若你的板子不同请修改
 
 #####-----云台/IMU安装矩阵（手眼标定用）-----#####
@@ -16,23 +19,34 @@ R_gimbal2imubody: [-1, 0, 0, 0, 1, 0, 0, 0, -1]
 
 #####-----相机内参（内参标定后回填）-----#####
 # [fx, 0, cx, 0, fy, cy, 0, 0, 1]（3×3 行优先）
-# 2026-09-03，16张筛选图；平均重投影误差: 0.2892px（1440x1080）
-camera_matrix: [2321.1448516431083, 0, 773.51514374772069, 0, 2335.8405999820166, 558.35666238582371, 0, 0, 1]
+# 2026-10-09, 23 images; mean reprojection error: 0.5066px; RMS: 0.5962px
+# 2048x1200 centered ROI, OffsetX=512, OffsetY=424; full sensor: 3072x2048
+# Crop translation only: cx -= 512, cy -= 424; fx/fy and distortion unchanged.
+camera_matrix: [2613.6238346662558, 0, 831.13793261490321, 0, 2623.9361517252046, 601.15236567678858, 0, 0, 1]
 # [k1, k2, p1, p2, k3]
-distort_coeffs: [-0.052990616769919285, 0.13874211747473905, 0.00113447179189630067, 0.0036897020313975178, 0]
+# 2026-10-20 重标（光圈/焦距动过，23 张，1600x1080 瞄准窗口，rms 0.2829 px）
+distort_coeffs: [-0.14672657883564594, 0.63738545399917312, -0.00079995678728670956, -0.0020413307914658638, 0]
 
 #####-----相机/云台外参（手眼标定后回填）-----#####
-# 相机同理想情况的偏角: yaw-13.87 pitch4.87 roll1.39 degree（roll 已去掉绕光轴 180° 伪影，原始输出为 -178.62）
-R_camera2gimbal: [0.24157550427275232, 0.076512493741470511, 0.96736090164779087, -0.97008128270415694, 0.043859036134035634, 0.23878586619909239, -0.024157414646913952, -0.99610352034859051, 0.084818606842615996]
-t_camera2gimbal: [-0.17518305300474016, -0.0013669946458138922, -0.017572867856055635]
+# 2026-10-10：旧注释作废（那份 R 含 180° 伪影，与正确值差 13.5°，别再用于任何验证）
+# 2026-10-10 回填：R 取 011048 / wide / wide4 三轮独立采集的平均（跨批次一致性 ±0.9°）；t 用机械实测值（IMU 在相机后方 20cm、右侧 5cm、低 2cm）
+R_camera2gimbal: [0.021136135, -0.009577720, 0.999730729, -0.999776201, -0.001103297, 0.021126526, 0.000900656, -0.999953524, -0.009598896]
+t_camera2gimbal: [0.20, 0.05, 0.02]
 
 #####-----相机配置（海康）-----#####
 camera_name: "hikrobot"
+# 2026-10-20：与实弹采集保持一致（现场光圈调过，亮度需同一口径复核）
 exposure_ms: 6.0
-gain: 10.0
-camera_width: 1440
+gain: 16.0
+# 内参在「瞄准实际使用的窗口」上标定：
+#  · 该窗口已验证可出图（3072x2048 全画幅 StartGrabbing 0x80000006 起不来）；
+#  · 畸变在用到的区域上拟合，不靠外推；
+#  · 输出即瞄准坐标，回填 standard.yaml 时不需要平移 cx/cy。
+camera_width: 1600
 camera_height: 1080
-camera_fps: 150.0
+camera_offset_x: 736
+camera_offset_y: 480
+camera_fps: 60.0
 white_balance_auto: "off"
 hikrobot_pixel_format: "BayerRG8"
 trigger_enable: false             # 标定使用连续取流；保存前保持云台静止
@@ -52,8 +66,10 @@ debug_tx: true
 xuc_enable: true                 # capture 只接收姿态，不调用 send()
 xuc_serial_port: "/dev/serial/by-id/usb-1a86_USB_Serial-if00-port0"
 xuc_serial_baud: 460800          # 与下位机 UART4 一致
-xuc_yaw_sign: 1                  # 目标 yaw 符号
-xuc_pitch_sign: -1               # 目标 pitch 符号（与现有 CAN 发送 -command.pitch 一致）
+xuc_yaw_sign: 1                  # 命令 yaw 符号；约定：帧内 yaw 增大 = 云台向左转
+xuc_pitch_sign: -1               # 命令 pitch 符号；约定：帧内 pitch 增大 = 向下俯
+xuc_imu_angle_unit: deg         # 回传 IMU 角度单位（驱动转为弧度）
+xuc_command_angle_unit: deg     # 下发命令单位；电控 73ea451 固件期望度
 xuc_imu_yaw_sign: -1             # 沿用 Phase 2B 已验证的世界系方向
 xuc_imu_pitch_sign: 1            # 下位机IMU pitch方向，接板后确认
 xuc_imu_yaw_offset_rad: 0.0

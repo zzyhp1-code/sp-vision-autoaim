@@ -96,3 +96,10 @@ backups/
 .codex-backups/
 Thumbs.db
 .DS_Store
+
+# AI handover checkpoints and offline snapshots of the SBC state.
+# The checkpoints are working memory for a handover, and _pull_backup holds
+# model weights plus calibration images copied off the single board computer;
+# neither belongs in version control.
+checkpoint-*.md
+_pull_backup/

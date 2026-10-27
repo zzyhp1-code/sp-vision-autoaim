@@ -13,6 +13,7 @@ class CameraBase
 {
 public:
   virtual ~CameraBase() = default;
+  // Color frames use CV_8UC3 BGR; consumers must not swap channels for display/save.
   virtual void read(cv::Mat & img, std::chrono::steady_clock::time_point & timestamp) = 0;
 };
 

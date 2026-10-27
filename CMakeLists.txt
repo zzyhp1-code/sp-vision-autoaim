@@ -58,6 +58,12 @@ message(STATUS "--------------------CMAKE_BUILD_TYPE: ${CMAKE_BUILD_TYPE}-------
 
 
 find_package(OpenCV 4.5 REQUIRED)
+# The build host's SSD has a few unreadable sectors, and
+# libopencv_alphamat.so.4.5.4d happens to live on one of them: the linker dies
+# with SIGBUS the moment it touches that file.  This project never calls the
+# alphamat module, so drop it from the link list instead of depending on a
+# specific linker being selected.  Nothing else about OpenCV changes.
+list(FILTER OpenCV_LIBS EXCLUDE REGEX "opencv_alphamat")
 
 find_package(fmt REQUIRED)
 find_package(Eigen3 REQUIRED)
@@ -257,7 +263,16 @@ add_executable(
 add_executable(yaw_eskf_test tasks/auto_aim/yaw_eskf_test.cpp)
 add_executable(armor_motion_filter_test tasks/auto_aim/armor_motion_filter_test.cpp)
 add_executable(robust_range_filter_test tasks/auto_aim/robust_range_filter_test.cpp)
+add_executable(
+  center_follow_lead_test
+  tasks/auto_aim/center_follow_lead_test.cpp)
 add_executable(shot_delay_adapter_test tasks/auto_aim/shot_delay_adapter_test.cpp)
+add_executable(fire_window_test tasks/auto_aim/fire_window_test.cpp)
+add_executable(model_rebuild_test tasks/auto_aim/model_rebuild_test.cpp)
+add_executable(tracker_reset_test tasks/auto_aim/tracker_reset_test.cpp)
+target_link_libraries(tracker_reset_test ${OpenCV_LIBS} fmt::fmt yaml-cpp auto_aim tools io)
+add_executable(aimer_prediction_test tasks/auto_aim/aimer_prediction_test.cpp)
+target_link_libraries(aimer_prediction_test ${OpenCV_LIBS} fmt::fmt yaml-cpp auto_aim tools io)
 add_executable(
   adaptive_corner_refiner_test
   tasks/auto_aim/adaptive_corner_refiner_test.cpp
@@ -278,12 +293,35 @@ foreach(estimator_test
     yaw_eskf_test
     armor_motion_filter_test
     robust_range_filter_test
+    center_follow_lead_test
     shot_delay_adapter_test
+    fire_window_test
+    model_rebuild_test
+    tracker_reset_test
+    aimer_prediction_test
     adaptive_corner_refiner_test
     ekf_consistency_test
     iterated_ekf_test)
   target_compile_options(${estimator_test} PRIVATE -UNDEBUG)
 endforeach()
+
+# 四角点核对工具：只读导出装甲板四点与几何量，不发送任何控制帧。
+if(OpenVINO_FOUND)
+    add_executable(corner_probe tests/corner_probe.cpp)
+    target_link_libraries(corner_probe ${OpenCV_LIBS} fmt::fmt yaml-cpp tools auto_aim io)
+endif()
+
+# PnP 解算核对工具：逐帧导出位置/射程/姿态/重投影残差，用于验证内参与畸变。
+# 只读，不发送任何控制帧。
+if(OpenVINO_FOUND)
+    add_executable(pnp_probe tests/pnp_probe.cpp)
+    target_link_libraries(pnp_probe ${OpenCV_LIBS} fmt::fmt yaml-cpp tools auto_aim io)
+endif()
+
+# XUC 上下位机运动联调探针：默认 dry-run，--execute 才下发 control=1，带步长与门控硬保护。
+# 只依赖 io（串口），不需要 OpenVINO。
+add_executable(xuc_motion_probe tests/xuc_motion_probe.cpp)
+target_link_libraries(xuc_motion_probe fmt::fmt yaml-cpp tools io)
 
 target_link_libraries(auto_aim_test ${OpenCV_LIBS} fmt::fmt yaml-cpp tools io auto_aim)
 target_link_libraries(camera_detect_test ${OpenCV_LIBS} fmt::fmt yaml-cpp tools auto_aim io)

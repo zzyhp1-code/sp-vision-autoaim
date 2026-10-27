@@ -1,0 +1,12 @@
+# Managed by sp-vision FPV installer
+[Unit]
+Description=MediaMTX for SP vision FPV
+
+[Service]
+WorkingDirectory=@MEDIA@
+ExecStart=@MEDIA@/mediamtx @MEDIA@/mediamtx.yml
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

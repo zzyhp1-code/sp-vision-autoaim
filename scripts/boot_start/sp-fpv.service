@@ -1,0 +1,19 @@
+# Managed by sp-vision FPV installer
+[Unit]
+Description=Publish the SP vision camera window
+Wants=sp-mediamtx.service
+After=sp-mediamtx.service sp-vision-boot.service
+
+[Service]
+WorkingDirectory=@PROJECT@
+ExecStart=/usr/bin/python3 @PROJECT@/tools/fpv_publisher.py
+Environment=PYTHONUNBUFFERED=1
+Environment=PATH=/usr/local/bin:/usr/bin:/bin
+UnsetEnvironment=LD_PRELOAD LD_LIBRARY_PATH PYTHONPATH BASH_ENV ENV
+Restart=on-failure
+RestartSec=5
+KillMode=mixed
+TimeoutStopSec=20
+
+[Install]
+WantedBy=default.target

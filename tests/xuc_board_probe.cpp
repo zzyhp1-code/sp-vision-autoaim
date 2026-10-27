@@ -3,6 +3,7 @@
 #include <cstdio>
 #include <fstream>
 #include <string>
+#include <stdexcept>
 #include <thread>
 
 #include "io/command.hpp"
@@ -12,7 +13,7 @@ int main(int argc, char ** argv)
 {
   if (argc < 2) {
     std::printf(
-      "用法: %s <serial_port> [baud=460800] [seconds=10] [--safe-heartbeat]\n",
+      "用法: %s <serial_port> [baud=460800] [seconds=10] [--safe-heartbeat] [--imu-unit=deg|rad]\n",
       argv[0]);
     return 2;
   }
@@ -21,11 +22,18 @@ int main(int argc, char ** argv)
   uint32_t baud = 460800;
   double duration_seconds = 10.0;
   bool safe_heartbeat = false;
+  std::string imu_angle_unit = "rad";
 
   try {
     if (argc >= 3) baud = static_cast<uint32_t>(std::stoul(argv[2]));
     if (argc >= 4) duration_seconds = std::stod(argv[3]);
-    if (argc >= 5) safe_heartbeat = std::string(argv[4]) == "--safe-heartbeat";
+    for (int i = 4; i < argc; ++i) {
+      const std::string option = argv[i];
+      if (option == "--safe-heartbeat") safe_heartbeat = true;
+      else if (option == "--imu-unit=deg") imu_angle_unit = "deg";
+      else if (option == "--imu-unit=rad") imu_angle_unit = "rad";
+      else throw std::invalid_argument("unknown probe option: " + option);
+    }
   } catch (const std::exception & e) {
     std::printf("[FAIL] 参数错误: %s\n", e.what());
     return 2;
@@ -43,6 +51,7 @@ int main(int argc, char ** argv)
       << "xuc_enable: true\n"
       << "xuc_serial_port: \"" << port << "\"\n"
       << "xuc_serial_baud: " << baud << "\n"
+      << "xuc_imu_angle_unit: " << imu_angle_unit << "\n"
       << "xuc_yaw_sign: 1\n"
       << "xuc_pitch_sign: -1\n"
       << "xuc_imu_yaw_sign: 1\n"
@@ -54,6 +63,7 @@ int main(int argc, char ** argv)
 
   std::printf("XUC_PROBE_PORT=%s\n", port.c_str());
   std::printf("XUC_PROBE_BAUD=%u\n", baud);
+  std::printf("XUC_PROBE_IMU_WIRE_UNIT=%s\n", imu_angle_unit.c_str());
   std::printf(
     "XUC_PROBE_MODE=%s\n",
     safe_heartbeat ? "SAFE_HEARTBEAT" : "RECEIVE_ONLY");
@@ -93,10 +103,10 @@ int main(int argc, char ** argv)
       if (valid) {
         std::printf(
           "[RX] valid=1 mode=%u robot_id=%u bullet_speed=%.3f bullet_count=%u "
-          "imu_pitch=%.6f imu_yaw=%.6f\n",
+          "imu_pitch_rad=%.6f imu_yaw_rad=%.6f imu_pitch_deg=%.3f imu_yaw_deg=%.3f\n",
           static_cast<unsigned>(xuc.mode()), static_cast<unsigned>(xuc.robot_id()),
           xuc.bullet_speed(), static_cast<unsigned>(xuc.bullet_count()),
-          xuc.imu_pitch(), xuc.imu_yaw());
+          xuc.imu_pitch(), xuc.imu_yaw(), xuc.imu_pitch() * 180.0 / M_PI, xuc.imu_yaw() * 180.0 / M_PI);
       } else {
         std::printf("[RX] valid=0 waiting_or_timeout\n");
       }

@@ -15,6 +15,8 @@ HikRobot::HikRobot(const std::string & config_path)
   frame_rate_(150.0),
   width_(0),
   height_(0),
+  offset_x_(0),
+  offset_y_(0),
   white_balance_auto_(MV_BALANCEWHITE_AUTO_OFF),
   trigger_enable_(false),
   trigger_source_(MV_TRIGGER_SOURCE_LINE0),
@@ -36,6 +38,8 @@ HikRobot::HikRobot(const std::string & config_path)
   if (yaml["camera_fps"]) frame_rate_ = yaml["camera_fps"].as<double>();
   if (yaml["camera_width"]) width_ = yaml["camera_width"].as<int64_t>();
   if (yaml["camera_height"]) height_ = yaml["camera_height"].as<int64_t>();
+  if (yaml["camera_offset_x"]) offset_x_ = yaml["camera_offset_x"].as<int64_t>();
+  if (yaml["camera_offset_y"]) offset_y_ = yaml["camera_offset_y"].as<int64_t>();
   if (yaml["hikrobot_pixel_format"]) {
     pixel_format_ = yaml["hikrobot_pixel_format"].as<std::string>();
   }
@@ -132,12 +136,13 @@ void HikRobot::capture_start()
 
   // Leave any persisted trigger mode before changing image-format nodes.
   set_enum_value("TriggerMode", MV_TRIGGER_MODE_OFF);
-  if (width_ > 0 || height_ > 0) {
-    set_int_value("OffsetX", 0);
-    set_int_value("OffsetY", 0);
+  // Reset offsets before resizing, then apply the calibrated crop origin.
+  if (width_ > 0 || height_ > 0 || offset_x_ != 0 || offset_y_ != 0) {
+    if (!set_int_value("OffsetX", 0) || !set_int_value("OffsetY", 0)) return;
+    if (width_ > 0 && !set_int_value("Width", width_)) return;
+    if (height_ > 0 && !set_int_value("Height", height_)) return;
+    if (!set_int_value("OffsetX", offset_x_) || !set_int_value("OffsetY", offset_y_)) return;
   }
-  if (width_ > 0) set_int_value("Width", width_);
-  if (height_ > 0) set_int_value("Height", height_);
   if (!pixel_format_.empty()) set_enum_value("PixelFormat", pixel_format_);
 
   set_enum_value("BalanceWhiteAuto", white_balance_auto_);
@@ -160,6 +165,14 @@ void HikRobot::capture_start()
   }
 
   log_camera_state();
+
+  // Larger USB frames exceed the default 16 MiB usbfs budget with 8 transfers.
+  ret = MV_USB_SetTransferWays(handle_, 4);
+  if (ret != MV_OK) {
+    tools::logger()->warn("MV_USB_SetTransferWays(4) failed: {:#x}", ret);
+    return;
+  }
+  tools::logger()->info("[HikRobot] USB transfer ways=4");
 
   ret = MV_CC_StartGrabbing(handle_);
   if (ret != MV_OK) {
@@ -197,30 +210,44 @@ void HikRobot::capture_start()
         logged_frame_format = true;
       }
       const cv::Size frame_size(raw.stFrameInfo.nWidth, raw.stFrameInfo.nHeight);
-      cv::Mat rgb_img;
+      cv::Mat bgr_img;
 
       // MVS 4.5 returns an error from MV_CC_ConvertPixelType for BayerRG8.
-      // OpenCV 4.5 has only the ambiguous two-letter Bayer aliases. PFNC BayerRG8
-      // is the four-letter RGGB pattern; RGGB->RGB is aliased to BayerRG2BGR.
-      // The apparently opposite suffix is intentional. Keep the result in RGB.
-      int bayer_to_rgb = -1;
+      // OpenCV 4.5 has only the ambiguous two-letter Bayer aliases, and those
+      // names are *inverted* with respect to the PFNC names used by the SDK:
+      // PFNC BayerRG8 (RGGB pattern) must be converted with COLOR_BayerBG2BGR.
+      // Measured 2026-10-10 on MV-CS060-10UC-PRO (pixel_type=0x1080009):
+      //   raw 2x2 parity means  even/even=12.94  even/odd=9.99  odd/even=10.07  odd/odd=8.53
+      //   => the red sample sits at (even,even) and blue at (odd,odd) => RGGB, as declared.
+      //   COLOR_BayerBG2BGR  -> B=8.69  G=10.09  R=13.10  (correct: banner red, bars blue)
+      //   COLOR_BayerRG2BGR  -> B=13.10 G=10.09  R=8.69   (red/blue swapped)
+      // Keep the result BGR: downstream consumers (YOLO, classifier, get_color) all
+      // treat cv::Mat as BGR, and the previous "RGB" naming was what hid the swap.
+      int bayer_to_bgr = -1;
       switch (raw.stFrameInfo.enPixelType) {
-        case PixelType_Gvsp_BayerGR8: bayer_to_rgb = cv::COLOR_BayerGR2BGR; break;
-        case PixelType_Gvsp_BayerRG8: bayer_to_rgb = cv::COLOR_BayerRG2BGR; break;
-        case PixelType_Gvsp_BayerGB8: bayer_to_rgb = cv::COLOR_BayerGB2BGR; break;
-        case PixelType_Gvsp_BayerBG8: bayer_to_rgb = cv::COLOR_BayerBG2BGR; break;
+        // PFNC BayerGR8 = GRBG pattern -> OpenCV's GBRG-named code
+        case PixelType_Gvsp_BayerGR8: bayer_to_bgr = cv::COLOR_BayerGB2BGR; break;
+        // PFNC BayerRG8 = RGGB pattern -> OpenCV's BGGR-named code
+        case PixelType_Gvsp_BayerRG8: bayer_to_bgr = cv::COLOR_BayerBG2BGR; break;
+        // PFNC BayerGB8 = GBRG pattern -> OpenCV's GRBG-named code
+        case PixelType_Gvsp_BayerGB8: bayer_to_bgr = cv::COLOR_BayerGR2BGR; break;
+        // PFNC BayerBG8 = BGGR pattern -> OpenCV's RGGB-named code
+        case PixelType_Gvsp_BayerBG8: bayer_to_bgr = cv::COLOR_BayerRG2BGR; break;
         default: break;
       }
 
-      if (bayer_to_rgb >= 0) {
+      if (bayer_to_bgr >= 0) {
         cv::Mat raw_img(frame_size, CV_8UC1, raw.pBufAddr);
-        cv::cvtColor(raw_img, rgb_img, bayer_to_rgb);
+        cv::cvtColor(raw_img, bgr_img, bayer_to_bgr);
       } else if (raw.stFrameInfo.enPixelType == PixelType_Gvsp_Mono8) {
         cv::Mat raw_img(frame_size, CV_8UC1, raw.pBufAddr);
-        cv::cvtColor(raw_img, rgb_img, cv::COLOR_GRAY2RGB);
+        cv::cvtColor(raw_img, bgr_img, cv::COLOR_GRAY2BGR);
       } else if (raw.stFrameInfo.enPixelType == PixelType_Gvsp_RGB8_Packed) {
         cv::Mat raw_img(frame_size, CV_8UC3, raw.pBufAddr);
-        rgb_img = raw_img.clone();
+        cv::cvtColor(raw_img, bgr_img, cv::COLOR_RGB2BGR);
+      } else if (raw.stFrameInfo.enPixelType == PixelType_Gvsp_BGR8_Packed) {
+        cv::Mat raw_img(frame_size, CV_8UC3, raw.pBufAddr);
+        bgr_img = raw_img.clone();
       } else {
         tools::logger()->warn(
           "Unsupported HikRobot pixel type: {:#x}",
@@ -229,7 +256,7 @@ void HikRobot::capture_start()
         continue;
       }
 
-      queue_.push({rgb_img, timestamp});
+      queue_.push({bgr_img, timestamp});
 
       ret = MV_CC_FreeImageBuffer(handle_, &raw);
       if (ret != MV_OK) {
@@ -322,6 +349,7 @@ void HikRobot::log_camera_state() const
 {
   MVCC_INTVALUE_EX width{};
   MVCC_INTVALUE_EX height{};
+  MVCC_INTVALUE_EX offset_x{}, offset_y{};
   MVCC_ENUMVALUE pixel_format{};
   MVCC_ENUMVALUE white_balance{};
   MVCC_ENUMVALUE exposure_auto{};
@@ -335,11 +363,14 @@ void HikRobot::log_camera_state() const
   const bool geometry_ok =
     MV_CC_GetIntValueEx(handle_, "Width", &width) == MV_OK &&
     MV_CC_GetIntValueEx(handle_, "Height", &height) == MV_OK &&
+    MV_CC_GetIntValueEx(handle_, "OffsetX", &offset_x) == MV_OK &&
+    MV_CC_GetIntValueEx(handle_, "OffsetY", &offset_y) == MV_OK &&
     MV_CC_GetEnumValue(handle_, "PixelFormat", &pixel_format) == MV_OK;
   if (geometry_ok) {
     tools::logger()->info(
-      "[HikRobot][READBACK] image={}x{}, pixel_format={:#x}", width.nCurValue,
-      height.nCurValue, pixel_format.nCurValue);
+      "[HikRobot][READBACK] image={}x{}, offset=({},{}), pixel_format={:#x}",
+      width.nCurValue, height.nCurValue, offset_x.nCurValue, offset_y.nCurValue,
+      pixel_format.nCurValue);
   } else {
     tools::logger()->warn("[HikRobot][READBACK] failed to read image geometry/format");
   }

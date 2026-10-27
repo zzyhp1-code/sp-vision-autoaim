@@ -33,6 +33,8 @@ private:
   double frame_rate_;
   int64_t width_;
   int64_t height_;
+  int64_t offset_x_;
+  int64_t offset_y_;
   unsigned int white_balance_auto_;
   bool trigger_enable_;
   unsigned int trigger_source_;
@@ -48,7 +50,7 @@ private:
   std::thread capture_thread_;
   std::atomic<bool> capturing_;
   std::atomic<bool> capture_quit_;
-  tools::ThreadSafeQueue<CameraData> queue_;
+  tools::ThreadSafeQueue<CameraData, true> queue_;
 
   int vid_, pid_;
 

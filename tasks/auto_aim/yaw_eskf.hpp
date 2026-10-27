@@ -21,6 +21,10 @@ public:
     double angular_jerk_variance = 20.0;
     double measurement_variance_floor = std::pow(1.0 * M_PI / 180.0, 2);
     double nis_reject_threshold = 16.0;
+    // Deprecated: predictions are no longer clamped to this value.  F and Q are
+    // exact discretisations for any dt, and clamping desynchronised the state
+    // from the timestamp the caller asked for.  Kept only so existing
+    // aggregate initialisers and the YAML loader still compile.
     double max_dt_s = 0.10;
     int min_trusted_updates = 6;
     double trusted_rate_variance = 4.0;
@@ -53,10 +57,50 @@ public:
     last_nis_ = std::numeric_limits<double>::quiet_NaN();
   }
 
+  // Propagate the filter over the FULL dt_s.
+  //
+  // The ballistic solver asks for predictions as long as the projectile flight
+  // time (~0.15-0.30 s).  A single call used to be clamped to max_dt_s
+  // (0.10 s), so the body angle advanced only a fraction of the required
+  // rotation while Target::t_ still moved to the requested time.  Because
+  // Target::ekf_x() overwrites the body angle/rate with this filter's estimate
+  // whenever it is trusted, that truncation made the aim point lag the real
+  // rotation and could select the neighbouring face (90 deg away).
+  //
+  // F and Q below are exact discretisations of the white-noise-jerk driven
+  // constant-acceleration model for any dt > 0, so the whole interval is
+  // propagated in one step.  No clamping happens here: silently shortening dt
+  // would desynchronise the state from t_.  A long extrapolation instead grows
+  // P, which makes trusted() false and lets Target::ekf_x() fall back to the
+  // main EKF -- that is the intended guard.
+  //
+  // Negative dt is still ignored, as before.  Planner::get_trajectory rewinds
+  // the target to seed its finite-difference velocity, but a backward step is
+  // not the time reverse of a forward one: the process noise must be carried
+  // through D*Q*D with D = diag(1, -1, 1).  Extrapolating backwards with plain
+  // Q would be inconsistent, and recovering the historical posterior would
+  // need smoothing rather than a negative prediction.  The rewind only feeds
+  // the planner's own velocity estimate, so leaving it out keeps the previous
+  // behaviour for that path while fixing the forward case that matters here.
   void predict(double dt_s)
   {
     if (!initialized_ || !std::isfinite(dt_s) || dt_s <= 0.0) return;
-    const double dt = std::min(dt_s, std::max(1e-3, config_.max_dt_s));
+
+    // Guard against absurd inputs (stalled clock, corrupt timestamp) that would
+    // overflow the polynomial terms.  Such a gap is not a usable prediction.
+    if (dt_s > kMaxPropagationDtS) {
+      initialized_ = false;
+      return;
+    }
+
+    // 子步积分（2026-10-19 借鉴 Fujian_AutoAim 26.10.18）：
+    // max_dt_s 的含义从"单次预测上限"改成"最大积分步长"，整个 dt 用 N 个子步走完。
+    // 这样多项式项不会在大 dt 下发散，同时不改变调用方看到的总时域。
+    const double max_step_s = std::max(1e-3, config_.max_dt_s);
+    constexpr int max_steps = 200;
+    int steps = static_cast<int>(std::ceil(dt_s / max_step_s));
+    steps = std::clamp(steps, 1, max_steps);
+    const double dt = dt_s / steps;
     const double dt2 = dt * dt;
     const double dt3 = dt2 * dt;
     const double dt4 = dt3 * dt;
@@ -66,14 +110,16 @@ public:
     F << 1.0, dt, 0.5 * dt2,
          0.0, 1.0, dt,
          0.0, 0.0, 1.0;
-    x_ = F * x_;
-
     const double q = std::max(0.0, config_.angular_jerk_variance);
     Eigen::Matrix3d Q;
     Q << dt5 / 20.0, dt4 / 8.0, dt3 / 6.0,
          dt4 / 8.0, dt3 / 3.0, dt2 / 2.0,
          dt3 / 6.0, dt2 / 2.0, dt;
-    P_ = F * P_ * F.transpose() + q * Q;
+    for (int i = 0; i < steps; ++i) {
+      x_ = F * x_;
+      P_ = F * P_ * F.transpose() + q * Q;
+    }
+
     stabilize_covariance();
   }
 
@@ -179,6 +225,14 @@ public:
   const Eigen::Matrix3d & covariance() const { return P_; }
 
 private:
+  // Hard ceiling for a single propagation request.  A real ballistic prediction
+  // is at most a few hundred milliseconds; anything near this bound means the
+  // clock stalled or the timestamp is corrupt, so the state is declared
+  // invalid instead of extrapolating garbage.  Note this is NOT a prediction
+  // horizon: the horizon is governed by the covariance growth that trusted()
+  // observes.
+  static constexpr double kMaxPropagationDtS = 2.0;
+
   bool dynamics_within_configured_bounds() const
   {
     return std::isfinite(x_[1]) && std::isfinite(x_[2]) &&
@@ -189,7 +243,9 @@ private:
 
   void stabilize_covariance()
   {
-    P_ = 0.5 * (P_ + P_.transpose());
+    // .eval() forces a temporary: writing P_ while reading both P_ and
+    // P_.transpose() in the same expression is an Eigen aliasing hazard.
+    P_ = (0.5 * (P_ + P_.transpose())).eval();
     for (int i = 0; i < 3; ++i) {
       if (!std::isfinite(P_(i, i)) || P_(i, i) < 1e-12) P_(i, i) = 1e-12;
     }

@@ -219,8 +219,7 @@ bool Detector::detect(Armor & armor, const cv::Mat & bgr_img)
   std::vector<cv::Point2f> points2f{
     closest_left_lightbar->top, closest_left_lightbar->bottom, closest_right_lightbar->bottom,
     closest_right_lightbar->top};
-  // 相机输出为 RGB，imshow 需要 BGR
-  cv::cvtColor(armor_roi, armor_roi, cv::COLOR_RGB2BGR);
+  // armor_roi 与整图同为 BGR（相机驱动统一输出 BGR），imshow 直接可用
   tools::draw_points(armor_roi, points2f, {0, 0, 255}, 2);
   cv::imshow("armor_roi", armor_roi);
 
@@ -364,8 +363,7 @@ void Detector::show_result(
   const std::list<Armor> & armors, int frame_count) const
 {
   auto detection = bgr_img.clone();
-  // 相机输出为 RGB，imshow 需要 BGR
-  cv::cvtColor(detection, detection, cv::COLOR_RGB2BGR);
+  // bgr_img 已经是 BGR（相机驱动统一输出 BGR），无需再转换
   tools::draw_text(detection, fmt::format("[{}]", frame_count), {10, 30}, {255, 255, 255});
 
   for (const auto & lightbar : lightbars) {
