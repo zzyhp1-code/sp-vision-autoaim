@@ -58,7 +58,7 @@ def load(path: Path):
 def audit(path: Path) -> dict:
     predictions, observations = load(path)
     times = [o["image_ns"] for o in observations]
-    residuals, horizons, omegas = [], [], []
+    residuals, horizons, omegas, ranges = [], [], [], []
     for p in predictions:
         if not p.get("valid") or not times:
             continue
@@ -71,11 +71,14 @@ def audit(path: Path) -> dict:
         if span <= 0 or span > MAX_BRACKET_NS:
             continue
         f = (target_ns - lo["image_ns"]) / span
-        plate = lo["measured_world_yaw_rad"] + f * wrap(
-            hi["measured_world_yaw_rad"] - lo["measured_world_yaw_rad"])
+        # Use the plate CENTRE bearing, not its normal. A hit needs the centre on
+        # the bore line; the normal is oblique for most of the crossing and using
+        # it made an aligned shot look ~10 deg off.
+        x = lo["measured_world_xyz"][0] + f * (hi["measured_world_xyz"][0] - lo["measured_world_xyz"][0])
+        y = lo["measured_world_xyz"][1] + f * (hi["measured_world_xyz"][1] - lo["measured_world_xyz"][1])
         gimbal = lo["gimbal_yaw_rad"] + f * wrap(hi["gimbal_yaw_rad"] - lo["gimbal_yaw_rad"])
-        # The plate normal faces the bore, hence the pi offset before folding.
-        residuals.append(math.degrees(wrap(plate - gimbal - math.pi, math.pi / 2.0)))
+        residuals.append(math.degrees(wrap(math.atan2(y, x) - gimbal, math.pi / 2.0)))
+        ranges.append(math.hypot(x, y))
         horizons.append((target_ns - p["image_ns"]) / 1e6)
         raw = p.get("raw_state") or []
         if len(raw) >= 8:
@@ -84,6 +87,7 @@ def audit(path: Path) -> dict:
         return {"log": path.name, "paired": 0}
 
     absolute = sorted(abs(r) for r in residuals)
+    half_angles = [math.degrees(math.atan2(0.0675, r)) for r in ranges]
     omega = statistics.median(omegas) if omegas else float("nan")
     median = statistics.median(residuals)
     return {
@@ -92,9 +96,12 @@ def audit(path: Path) -> dict:
         "median_deg": round(median, 2),
         "median_abs_deg": round(statistics.median(absolute), 2),
         "p90_abs_deg": round(absolute[int(0.9 * (len(absolute) - 1))], 2),
-        "within_1deg_pct": round(100.0 * sum(d <= 1.0 for d in absolute) / len(absolute), 1),
-        "within_3deg_pct": round(100.0 * sum(d <= 3.0 for d in absolute) / len(absolute), 1),
-        "within_5deg_pct": round(100.0 * sum(d <= 5.0 for d in absolute) / len(absolute), 1),
+        # atan(plate half width 6.75 cm / range) is the real hit window
+        "plate_half_angle_median_deg": round(statistics.median(half_angles), 2),
+        "within_half_angle_pct": round(100.0 * sum(
+            1 for d, h in zip((abs(r) for r in residuals), half_angles) if d <= h) / len(residuals), 1),
+        "le_0_8deg_pct": round(100.0 * sum(d <= 0.8 for d in absolute) / len(absolute), 1),
+        "le_1_2deg_pct": round(100.0 * sum(d <= 1.2 for d in absolute) / len(absolute), 1),
         "omega_median_rad_s": round(omega, 2),
         # A pure timing error would need this much extra lead; a bore offset would not.
         # residual[deg] / omega[rad/s] -> seconds requires converting degrees to rad.
