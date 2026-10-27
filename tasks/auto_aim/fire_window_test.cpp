@@ -122,6 +122,7 @@ void test_temporary_loss()
   physical.auto_mode = physical.feedback = physical.convergence = physical.motion = true;
   physical.allow_shoot = true;
   physical.cadence = physical.yaw = physical.visibility = physical.pitch = true;
+  physical.aim = true;
   physical.one_face = physical.phase = physical.timing = true;
   const auto gates = [&](FireClock::time_point now, bool gap, bool inhibit = false,
                          std::uint64_t generation = 1, int face = 2, bool geometry = true) {
@@ -190,12 +191,26 @@ void test_temporary_loss()
   for (auto member : {&auto_aim::FireRequestGates::target, &auto_aim::FireRequestGates::model,
        &auto_aim::FireRequestGates::prediction, &auto_aim::FireRequestGates::feedback,
        &auto_aim::FireRequestGates::yaw, &auto_aim::FireRequestGates::visibility,
-       &auto_aim::FireRequestGates::pitch, &auto_aim::FireRequestGates::cadence}) {
+       &auto_aim::FireRequestGates::pitch}) {
     physical.*member = false;
     const auto g = gates(last_image, true);
     assert(!g.request_allowed() && !g.candidate_allowed(true));
     physical.*member = true;
   }
+  // Cooldown and "aim exists right now" gate the SEND only. Qualification must
+  // keep accumulating through a cooldown, and an absent plate must not silently
+  // bank qualification that is then reused for a shot.
+  for (const bool is_cadence : {true, false}) {
+    if (is_cadence) physical.cadence = false; else physical.aim = false;
+    const auto g = gates(last_image, true);
+    const auto reasons = g.closed();
+    assert(!g.request_allowed());
+    assert(g.candidate_allowed(true));
+    assert(reasons.find(is_cadence ? "cadence" : "aim") != std::string::npos);
+    if (is_cadence) physical.cadence = true; else physical.aim = true;
+  }
+  // Qualification cannot be banked across a stall in its own evidence either.
+  assert(gates(last_image + milliseconds(150), true).mature == false);
   auto all_closed = gates(last_image, true);
   all_closed.prediction = all_closed.model = all_closed.feedback = false;
   const auto reasons = all_closed.closed();
@@ -210,10 +225,64 @@ void test_temporary_loss()
   assert(clock.within(last_image + milliseconds(33), 2, 50.0));
 }
 
+void test_rotating_candidate_continuity()
+{
+  using namespace std::chrono;
+  const auto image = auto_aim::FireClock::time_point(seconds(10));
+  const std::int64_t prediction = 10400000000LL;
+  for (const double rate : {-4.5, 4.5}) {
+    auto_aim::FireCandidateWindow window;
+    // A retained window can skip two unqualified frames. At this field rate,
+    // 135 ms advances a real face by 34.8 degrees, without any face switch.
+    const double start_phase = rate > 0 ? 3.0 : -3.0;
+    window.update(true, false, 7, 2, true, image, start_phase, 3, prediction, rate);
+    for (int i = 1; i < 4; ++i) {
+      window.update(false, false, 7, 2, true, image + milliseconds(135 * i - 90), 0, 3);
+      window.update(false, false, 7, 2, true, image + milliseconds(135 * i - 45), 0, 3);
+      const auto next_prediction = prediction + 135000000LL * i;
+      const double next_phase = std::remainder(start_phase + rate * 0.135 * i, 2 * M_PI);
+      assert(std::abs(std::remainder(next_phase - window.face_yaw_rad, 2 * M_PI)) > 20 * deg);
+      assert(window.phase_discontinuity(next_phase, next_prediction) < 1e-12);
+      // A true phase jump is still rejected even when the model retains its ID.
+      assert(window.phase_discontinuity(next_phase + 40 * deg, next_prediction) > 20 * deg);
+      window.update(true, false, 7, 2, true, image + milliseconds(135 * i), next_phase, 3,
+        next_prediction, rate);
+      assert(window.frames == i + 1);
+    }
+    assert(window.can_continue(7, 2, true, 4));
+    auto changed = window;
+    changed.update(true, false, 7, 3, true, image + milliseconds(450), 0, 3,
+      prediction + 450000000, rate);
+    assert(changed.frames == 1 && changed.face == 3);
+    // Flight-time changes move the prediction timestamp as well as image time.
+    const auto shifted = window.phase_prediction_ns + 65000000;
+    assert(window.phase_discontinuity(window.face_yaw_rad + rate * 0.065, shifted) < 1e-12);
+    window.reset();
+    assert(!window.active && window.phase_prediction_ns == 0);
+  }
+}
+
 }  // namespace
 
 int main()
 {
+  {
+    using namespace std::chrono;
+    const auto image = auto_aim::FireClock::time_point(seconds(10));
+    auto_aim::FireCandidateWindow window;
+    for (int i = 0; i < 4; ++i)
+      window.update(true, false, 7, 2, true, image + milliseconds(40 * i), 0, 3);
+    assert(window.can_continue(7, 2, true, 4));
+    window.update(true, false, 7, 2, true, image + milliseconds(160), 0, 3, 0, 5.0, 13);
+    assert(window.frames == 1 && window.matches(7, 2, true, 13));
+    assert(!window.matches(7, 2, true) && !window.can_continue(7, 2, true, 3, 13));
+    window.update(true, false, 7, 2, true, image + milliseconds(200), 0, 3, 0, 5.0, 13);
+    assert(window.frames == 2);
+    window.update(true, false, 7, 2, true, image + milliseconds(240), 0, 3, 0, 5.0, 14);
+    assert(window.frames == 1 && window.prediction_source == 14);
+    window.update(true, true, 7, 2, true, image + milliseconds(280), 0, 3, 0, 5.0, 0);
+    assert(!window.active);  // Fallback in loss cannot inherit fixed-centre maturity.
+  }
   // Regress the field failure: all angle/feedback gates can stay open while
   // the error decreases until the next face handoff, without a local minimum.
   // An unrelated PLL solution must not divert this stable window into a wait.
@@ -273,5 +342,6 @@ int main()
 
   test_bounded_selection();
   test_temporary_loss();
+  test_rotating_candidate_continuity();
   std::cout << "fire_window_test: PASS (policy + selection + temporary-loss/send gates)\n";
 }

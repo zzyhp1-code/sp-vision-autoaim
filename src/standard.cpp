@@ -23,6 +23,9 @@
 #include "io/xuc.hpp"
 #include "tasks/auto_aim/aimer.hpp"
 #include "tasks/auto_aim/center_follow_lead.hpp"
+#include "tasks/auto_aim/face_prediction_residual.hpp"
+#include "tasks/auto_aim/fixed_center_shadow.hpp"
+#include "tasks/auto_aim/fixed_center_prediction_audit.hpp"
 #include "tasks/auto_aim/fire_window.hpp"
 #include "tasks/auto_aim/gyro_face_selector.hpp"
 #include "tasks/auto_aim/gyro_phase_scheduler.hpp"
@@ -895,6 +898,25 @@ int main(int argc, char * argv[])
   rotation_model_config.rate_disagreement_updates =
     xuc_rotation_rate_disagreement_updates;
   auto_aim::RotationModelManager rotation_model_manager(rotation_model_config);
+  auto_aim::FacePredictionResidual face_prediction_residual;
+  auto_aim::FixedCenterShadow fixed_center_shadow;
+  auto_aim::FixedCenterPredictionAudit fixed_center_prediction_audit;
+  auto_aim::FixedCenterTakeover fixed_center_takeover;
+  const bool fixed_center_prediction_enabled =
+    !integration_yaml["xuc_fixed_center_prediction_enabled"] ||
+    integration_yaml["xuc_fixed_center_prediction_enabled"].as<bool>();
+  std::string fixed_center_last_control_status;
+  std::uint64_t fixed_center_last_control_source = 0, fixed_center_last_control_generation = 0;
+  std::chrono::steady_clock::time_point fixed_center_last_control_time;
+  std::uint64_t predictor_frames = 0, predictor_eligible_frames = 0, fixed_predictor_frames = 0;
+  std::uint64_t predictor_solve_fallbacks = 0, predictor_source_transitions = 0;
+  std::string fixed_center_last_status;
+  std::chrono::steady_clock::time_point fixed_center_last_status_time;
+  bool prediction_geometry_initialized = false;
+  auto_aim::AimGeometry previous_prediction_geometry = auto_aim::AimGeometry::existing;
+  std::uint64_t previous_prediction_generation = 0;
+  int previous_prediction_source = -1;
+  std::chrono::steady_clock::time_point residual_last_summary;
   // 🎯 所有模块初始化完成，启动相机触发
   tools::logger()->info("=== All modules initialized ===");
   tools::logger()->info(
@@ -1358,6 +1380,8 @@ int main(int argc, char * argv[])
       !xuc_fire_inhibit_temp_lost || tracker.state() != "temp_lost";
     auto t3 = std::chrono::steady_clock::now();
 
+    auto_aim::AimPredictionModel frame_prediction_model;
+    int frame_prediction_source = -1;
     bool tracker_converged = false;
     bool yaw_motion_model_trusted = false;
     bool vehicle_model_fresh = false;
@@ -1376,9 +1400,12 @@ int main(int argc, char * argv[])
     if (!targets.empty()) {
       auto & tracked_target = targets.front();
       tracker_converged = tracked_target.convergened();
-      yaw_motion_model_trusted = tracked_target.yaw_eskf_trusted();
-      const auto tracked_x = tracked_target.ekf_x();
-      if (tracked_x.size() >= 9) {
+      frame_prediction_model = aimer.prediction_model(tracked_target);
+      frame_prediction_source = frame_prediction_model.geometry == auto_aim::AimGeometry::whole_ekf
+        ? 1 : (tracked_target.yaw_eskf_trusted() ? 2 : 0);
+      yaw_motion_model_trusted = frame_prediction_model.trusted;
+      const auto & tracked_x = frame_prediction_model.state;
+      if (frame_prediction_model.finite) {
         gyro_center_yaw = std::atan2(tracked_x[2], tracked_x[0]);
         gyro_body_phase_rad = tracked_x[6];
         gyro_omega_rad_s = tracked_x[7];
@@ -1414,6 +1441,40 @@ int main(int argc, char * argv[])
           tracked_target.armor_motion_nis(tracked_target.last_id));
       }
     }
+    // Never mix phase/rate samples or candidate maturity across estimator
+    // ownership or tracker generations. Aimer uses this same source decision.
+    if (!targets.empty() && frame_prediction_model.finite) {
+      if (!prediction_geometry_initialized ||
+          previous_prediction_geometry != frame_prediction_model.geometry ||
+          previous_prediction_source != frame_prediction_source ||
+          previous_prediction_generation != tracker.model_generation()) {
+        body_phase_history.clear();
+        body_phase_rate_window = 0.0;
+        rotation_model_manager.reset();
+        gyro_phase_scheduler.reset();
+        gyro_face_selector.reset();
+        fire_candidate_window.reset();
+        xuc_fire_window_selector.reset();
+        xuc_fire_candidate_active = false;
+        xuc_fire_ready_logged = false;
+        xuc_fire_candidate_frames = 0;
+        xuc_fire_candidate_miss = 0;
+        xuc_fire_candidate_face_yaw_rad = INFINITY;
+        prev_pred_yaw_error_rad = NAN;
+        prev_signed_impact_phase_rad = NAN;
+        event_last_fired_cycle = -1;
+        xuc_one_face_armed = true;
+        tools::logger()->info("[PREDMODEL] source={} model_generation={} omega={:+.3f} trusted={}",
+          auto_aim::aim_geometry_name(frame_prediction_model.geometry), tracker.model_generation(),
+          frame_prediction_model.angular_velocity_rad_s, frame_prediction_model.trusted);
+      }
+      prediction_geometry_initialized = true;
+      previous_prediction_geometry = frame_prediction_model.geometry;
+      previous_prediction_generation = tracker.model_generation();
+      previous_prediction_source = frame_prediction_source;
+    } else {
+      prediction_geometry_initialized = false;
+    }
     if (model_rebuild.update_trust(
           tracker.state() == "tracking", tracker_converged, yaw_motion_model_trusted)) {
       tools::logger()->info(
@@ -1424,7 +1485,7 @@ int main(int argc, char * argv[])
     }
     const bool model_rebuild_fire_gate_open = model_rebuild.fire_allowed();
     // ---- 弹着相位门的窗口平均角速度（与 YawESKF 的瞬时 ω 解耦）----
-    if (!targets.empty() && std::isfinite(gyro_body_phase_rad)) {
+    if (!targets.empty() && frame_prediction_model.trusted && std::isfinite(gyro_body_phase_rad)) {
       const double now_phase_s =
         std::chrono::duration<double>(t.time_since_epoch()).count();
       body_phase_history.emplace_back(now_phase_s, gyro_body_phase_rad);
@@ -1617,7 +1678,7 @@ int main(int argc, char * argv[])
     }
     double modeled_armor_range_m = NAN;
     if (!targets.empty()) {
-      const auto tracked_x = targets.front().ekf_x();
+      const auto & tracked_x = frame_prediction_model.state;
       if (gyro_model_fresh && tracked_x.size() >= 9) {
         const double center_range_m = std::hypot(tracked_x[0], tracked_x[2]);
         if (std::isfinite(center_range_m) && std::isfinite(tracked_x[8])) {
@@ -1625,7 +1686,8 @@ int main(int argc, char * argv[])
         }
       } else {
         const int primary_face_id = tracker.primary_face_id();
-        const auto modeled_faces = targets.front().armor_xyza_list();
+        const auto modeled_faces = frame_prediction_model.geometry == auto_aim::AimGeometry::whole_ekf
+          ? targets.front().whole_ekf_armor_xyza_list() : targets.front().armor_xyza_list();
         if (primary_face_id >= 0 &&
             primary_face_id < static_cast<int>(modeled_faces.size())) {
           modeled_armor_range_m = std::hypot(
@@ -1653,8 +1715,304 @@ int main(int argc, char * argv[])
     auto command = aimer.aim(
       targets, t, cboard.bullet_speed, true, &native_fire_prediction,
       auto_aim::AimGeometry::whole_ekf);  // to_now=true，生成当前时刻命令
-    const bool native_prediction_valid =
-      command.control && native_fire_prediction.valid && !targets.empty() &&
+    const bool baseline_prediction_valid =
+      command.control && native_fire_prediction.valid && native_fire_prediction.converged &&
+      !targets.empty() && native_fire_prediction.geometry == frame_prediction_model.geometry &&
+      std::isfinite(command.yaw) && std::isfinite(command.pitch);
+    const bool baseline_prediction_trusted =
+      baseline_prediction_valid && tracker_converged && yaw_motion_model_trusted;
+    auto_aim::FacePredictionResidual::Context fixed_center_context;
+    bool fixed_center_control_eligible = false;
+    bool fixed_center_fresh_observation = false;
+    // Score raw geometric forecasts against later same-face image-time poses.
+    // Visual consistency is diagnostic only; it never changes commands or gates.
+    if (!targets.empty() && frame_prediction_model.finite) {
+      auto_aim::FacePredictionResidual::Context context;
+      context.model_generation = tracker.model_generation();
+      context.target_id = static_cast<int>(targets.front().name);
+      context.geometry = static_cast<int>(frame_prediction_model.geometry);
+      context.source = frame_prediction_source;
+      context.speed_mode = static_cast<int>(rotation_model.mode);
+      context.rotation_sign = gyro_omega_rad_s > 1e-6 ? 1 : (gyro_omega_rad_s < -1e-6 ? -1 : 0);
+      context.bullet_speed_mps = native_fire_prediction.speed_mps;
+      context.base_delay_s = native_fire_prediction.delay_s;
+      context.omega_rad_s = gyro_omega_rad_s;
+      context.center_range_m = std::hypot(center_x_m, center_y_m);
+      std::vector<auto_aim::FacePredictionResidual::Observation> observations;
+      // Solved associations actually submitted to Target::update. These are
+      // not physical ground truth or independent per-observation EKF accepts.
+      if (tracker.state() == "tracking" && tracker_converged && yaw_motion_model_trusted) {
+        for (const auto & association : tracker.last_associations()) {
+          if (association.detection_index < 0 ||
+              association.detection_index >= static_cast<int>(armors.size())) continue;
+          const auto & measured = *std::next(armors.begin(), association.detection_index);
+          if (!measured.xyz_in_world.allFinite() || !measured.xyz_in_gimbal.allFinite() ||
+              measured.xyz_in_gimbal.x() <= 0.10) continue;
+          observations.push_back({association.face_id,
+            {measured.xyz_in_world.x(), measured.xyz_in_world.y(), measured.xyz_in_world.z()}});
+        }
+      }
+      const auto frame_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(t.time_since_epoch()).count();
+      fixed_center_context = context;
+      fixed_center_fresh_observation = !observations.empty() && tracker.state() == "tracking";
+      fixed_center_control_eligible = tracker_converged && yaw_motion_model_trusted && targets.front().jumped &&
+        targets.front().armor_num() == 4 && native_fire_prediction.whole_ekf_geometry &&
+        rotation_model.mode == auto_aim::RotationModelManager::Mode::high_speed_phase &&
+        xuc_fire_phase_window_rad <= 0.0;
+      for (const auto & match : face_prediction_residual.observe(frame_ns, context, observations)) {
+        const nlohmann::json record = {
+          {"schema", 1}, {"epoch", match.epoch}, {"model_generation", match.context.model_generation},
+          {"target", match.context.target_id}, {"geometry", match.context.geometry},
+          {"source", match.context.source}, {"speed_mode", match.context.speed_mode},
+          {"direction", match.context.rotation_sign}, {"face", match.face_id},
+          {"passage", match.passage_id}, {"issued_ns", match.issued_ns},
+          {"prediction_ns", match.prediction_ns}, {"left_ns", match.left_ns}, {"right_ns", match.right_ns},
+          {"predicted_xyz", match.predicted_xyz}, {"observed_xyz", match.observed_xyz},
+          {"error_xyz", match.error_xyz}, {"yaw_error_deg", match.yaw_error_rad * 180.0 / M_PI},
+          {"position_error_m", match.position_error_m}, {"omega_rad_s", match.context.omega_rad_s},
+          {"delay_s", match.context.base_delay_s}, {"speed_mps", match.context.bullet_speed_mps}};
+        tools::logger()->info("[PREDRES] {}", record.dump());
+      }
+      for (const auto & pair : fixed_center_prediction_audit.observe(frame_ns, context, observations)) {
+        const auto & a = pair.main;
+        const auto & b = pair.fixed;
+        const auto & m = pair.metadata;
+        const nlohmann::json record = {
+          {"schema", 1}, {"epoch", a.epoch}, {"model_generation", a.context.model_generation},
+          {"target", a.context.target_id}, {"geometry", a.context.geometry}, {"source", a.context.source},
+          {"speed_mode", a.context.speed_mode}, {"direction", a.context.rotation_sign},
+          {"face", a.face_id}, {"passage", a.passage_id}, {"issued_ns", a.issued_ns},
+          {"prediction_ns", a.prediction_ns}, {"left_ns", a.left_ns}, {"right_ns", a.right_ns},
+          {"main_xyz", a.predicted_xyz}, {"fixed_xyz", b.predicted_xyz}, {"observed_xyz", a.observed_xyz},
+          {"main_yaw_error_deg", a.yaw_error_rad * 180.0 / M_PI},
+          {"fixed_yaw_error_deg", b.yaw_error_rad * 180.0 / M_PI},
+          {"main_position_error_m", a.position_error_m}, {"fixed_position_error_m", b.position_error_m},
+          {"model_epoch", m.model_epoch}, {"revision", m.revision}, {"reference_ns", m.reference_ns},
+          {"stationary_supported", m.stationary_supported},
+          {"reason", auto_aim::FixedCenterShadow::reason_name(m.reason)},
+          {"heldout_center_speed_mps", m.center_speed_mps},
+          {"heldout_yaw_p90_deg", m.heldout_yaw_p90_rad * 180.0 / M_PI}, {"controls_output", false}};
+        tools::logger()->info("[FIXEDCENTER_RES] {}", record.dump());
+      }
+      if (native_fire_prediction.whole_ekf_geometry && targets.front().armor_num() == 4) {
+        const auto & x = frame_prediction_model.state;
+        auto_aim::FixedCenterShadow::Seed seed;
+        seed.center_x = x[0]; seed.center_y = x[2];
+        seed.phase_rad = x[6]; seed.omega_rad_s = x[7];
+        seed.radius_m = {x[8], x[8] + x[9]};
+        seed.height_m = {x[4], x[4] + x[10]};
+        const auto shadow = fixed_center_shadow.update(frame_ns, context, seed, observations);
+        if (shadow.fitted) {
+          const auto & state = shadow.model.state;
+          const nlohmann::json record = {
+            {"schema", 1}, {"epoch", shadow.epoch}, {"revision", shadow.revision},
+            {"model_generation", context.model_generation}, {"direction", context.rotation_sign},
+            {"train_samples", shadow.train_samples}, {"heldout_samples", shadow.heldout_samples},
+            {"heldout_face_mask", shadow.heldout_face_mask}, {"evaluable", shadow.evaluable},
+            {"heldout_yaw_p90_deg", shadow.heldout_yaw_p90_rad * 180.0 / M_PI},
+            {"heldout_position_p90_m", shadow.heldout_position_p90_m},
+            {"motion_evaluable", shadow.motion_evaluable},
+            {"heldout_center_speed_mps", shadow.heldout_center_speed_mps},
+            {"heldout_motion_span_s", shadow.heldout_motion_span_s},
+            {"training_cost", shadow.training_cost}, {"reference_ns", shadow.model.reference_ns},
+            {"center_xy", {state.center_x, state.center_y}}, {"radii_m", state.radius_m},
+            {"height_m", state.height_m}, {"phase_rad", state.phase_rad},
+            {"omega_rad_s", state.omega_rad_s}, {"controls_output", false}};
+          tools::logger()->info("[FIXEDCENTER_SHADOW] {}", record.dump());
+        }
+      } else {
+        if (fixed_center_shadow.output().samples || fixed_center_shadow.output().evaluable)
+          fixed_center_shadow.reset();
+      }
+      if (baseline_prediction_trusted && aimer.debug_aim_point.valid) {
+        const auto & xyz = native_fire_prediction.aim_xyza;
+        const auto issued_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+          std::chrono::steady_clock::now().time_since_epoch()).count();
+        const auto_aim::FacePredictionResidual::Prediction prediction{
+          issued_ns, native_fire_prediction.prediction_ns,
+          native_fire_prediction.face_id, {xyz[0], xyz[1], xyz[2]}, context};
+        face_prediction_residual.enqueue(prediction);
+        const auto paired = fixed_center_prediction_audit.enqueue(prediction, fixed_center_shadow);
+        if (paired.enqueued) {
+          const auto & forecast = paired.forecast;
+          const nlohmann::json record = {
+            {"schema", 1}, {"model_generation", context.model_generation}, {"target", context.target_id},
+            {"geometry", context.geometry}, {"source", context.source}, {"speed_mode", context.speed_mode},
+            {"direction", context.rotation_sign}, {"face", prediction.face_id},
+            {"issued_ns", issued_ns}, {"prediction_ns", prediction.prediction_ns},
+            {"main_xyz", prediction.xyz}, {"fixed_xyz", forecast.xyz},
+            {"model_epoch", forecast.fit.epoch}, {"revision", forecast.fit.revision},
+            {"reference_ns", forecast.fit.model.reference_ns},
+            {"stationary_supported", forecast.stationary_supported},
+            {"reason", auto_aim::FixedCenterShadow::reason_name(forecast.reason)}, {"controls_output", false}};
+          tools::logger()->info("[FIXEDCENTER_PRED] {}", record.dump());
+        }
+      } else {
+        fixed_center_prediction_audit.skip_main();
+      }
+      const auto status_time = std::chrono::steady_clock::now();
+      const auto status_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+        status_time.time_since_epoch()).count();
+      const auto status = fixed_center_shadow.forecast(status_ns, status_ns + 1, 0);
+      const std::string status_reason = native_fire_prediction.whole_ekf_geometry &&
+        targets.front().armor_num() == 4
+        ? auto_aim::FixedCenterShadow::reason_name(status.reason) : "unsupported_geometry";
+      if (status_reason != fixed_center_last_status ||
+          status_time - fixed_center_last_status_time >= std::chrono::seconds(1)) {
+        const auto & fit = status.fit;
+        const auto & counters = fixed_center_prediction_audit.counters();
+        const auto & fits = fixed_center_shadow.counters();
+        const nlohmann::json record = {
+          {"schema", 1}, {"frame_ns", frame_ns}, {"checked_ns", status_ns},
+          {"model_generation", context.model_generation}, {"epoch", fit.epoch}, {"revision", fit.revision},
+          {"reason", status_reason}, {"available", status.available},
+          {"stationary_supported", status.stationary_supported}, {"fit_attempted", fit.fit_attempted},
+          {"samples", fit.samples}, {"reference_ns", fit.model.reference_ns},
+          {"fit_attempts_total", fits.fit_attempts}, {"fit_failures_total", fits.fit_failures},
+          {"fit_resets_total", fits.resets},
+          {"heldout_center_speed_mps", fit.heldout_center_speed_mps},
+          {"heldout_yaw_p90_deg", fit.heldout_yaw_p90_rad * 180.0 / M_PI},
+          {"attempted_total", counters.attempted}, {"available_total", counters.available},
+          {"enqueued_total", counters.enqueued}, {"main_skipped_total", counters.main_skipped},
+          {"reason_counts", counters.reasons}, {"controls_output", false}};
+        tools::logger()->info("[FIXEDCENTER_STATUS] {}", record.dump());
+        fixed_center_last_status = status_reason;
+        fixed_center_last_status_time = status_time;
+      }
+      if (residual_last_summary == std::chrono::steady_clock::time_point{} ||
+          t - residual_last_summary >= std::chrono::seconds(1)) {
+        for (int face = 0; face < 4; ++face) {
+          const auto summary = face_prediction_residual.summary(face);
+          tools::logger()->info(
+            "[PREDRES_SUM] epoch={} model_generation={} source={} face={} cycles={} "
+            "bias_deg={:+.4f} scatter_deg={:.4f} p90_abs_deg={:.4f} matched_total={} unmatched_total={} pending={}",
+            summary.epoch, tracker.model_generation(), auto_aim::aim_geometry_name(frame_prediction_model.geometry),
+            face, summary.completed_cycles, summary.bias_rad * 180.0 / M_PI,
+            summary.scatter_rad * 180.0 / M_PI, summary.p90_abs_rad * 180.0 / M_PI,
+            summary.matched, summary.unmatched, summary.pending);
+          const auto main = fixed_center_prediction_audit.main_summary(face);
+          const auto fixed = fixed_center_prediction_audit.fixed_summary(face);
+          const auto & counters = fixed_center_prediction_audit.counters();
+          const nlohmann::json paired_summary = {
+            {"schema", 1}, {"epoch", main.epoch}, {"model_generation", context.model_generation},
+            {"face", face}, {"cycles", main.completed_cycles},
+            {"main_bias_deg", main.bias_rad * 180.0 / M_PI},
+            {"fixed_bias_deg", fixed.bias_rad * 180.0 / M_PI},
+            {"main_p90_abs_deg", main.p90_abs_rad * 180.0 / M_PI},
+            {"fixed_p90_abs_deg", fixed.p90_abs_rad * 180.0 / M_PI},
+            {"matched_epoch", main.matched}, {"unmatched_epoch", main.unmatched}, {"pending", main.pending},
+            {"matched_total", counters.matched}, {"stationary_matched_total", counters.stationary_matched},
+            {"no_reference_total", counters.no_reference}, {"discarded_reset_total", counters.discarded_reset},
+            {"overflow_total", counters.overflow}, {"source_rejected_total", counters.source_rejected},
+            {"pairing_errors_total", counters.pairing_errors}, {"controls_output", false}};
+          tools::logger()->info("[FIXEDCENTER_RES_SUM] {}", paired_summary.dump());
+        }
+        residual_last_summary = t;
+      }
+    } else {
+      face_prediction_residual.reset();
+      if (fixed_center_shadow.output().samples || fixed_center_shadow.output().evaluable)
+        fixed_center_shadow.reset();
+      fixed_center_prediction_audit.reset();
+      if (fixed_center_last_status != "no_target") {
+        const auto & counters = fixed_center_prediction_audit.counters();
+        const nlohmann::json record = {{"schema", 1}, {"reason", "no_target"},
+          {"discarded_reset_total", counters.discarded_reset}, {"matched_total", counters.matched},
+          {"enqueued_total", counters.enqueued}, {"controls_output", false}};
+        tools::logger()->info("[FIXEDCENTER_STATUS] {}", record.dump());
+        fixed_center_last_status = "no_target";
+      }
+    }
+    // The baseline above remains the audit reference. Only this invocation's
+    // immutable, qualified snapshot can replace future selection/trajectory;
+    // observation association and centre-follow control retain their model.
+    const auto baseline_fire_prediction = native_fire_prediction;
+    const auto baseline_command = command;
+    const auto baseline_aim_point = aimer.debug_aim_point;
+    const auto takeover_time = std::chrono::steady_clock::now();
+    const auto takeover_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+      takeover_time.time_since_epoch()).count();
+    const auto takeover_frame_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+      t.time_since_epoch()).count();
+    const auto takeover = fixed_center_takeover.update(
+      fixed_center_prediction_enabled, fixed_center_control_eligible,
+      takeover_frame_ns, takeover_ns, fixed_center_context, fixed_center_shadow,
+      fixed_center_fresh_observation);
+    std::string takeover_reason = takeover.reason;
+    // A plate leaving the shootable cone for a few frames is expected while the
+    // vehicle keeps spinning. That is "no opportunity this frame", NOT "the
+    // fixed-centre model failed": keep the model identity (and therefore the
+    // fire window's source/face continuity) and simply publish no aim point.
+    bool fixed_center_no_face = false;
+    if (takeover.use_fixed) {
+      auto_aim::AimPredictionTrace fixed_prediction;
+      const auto fixed_command = aimer.aim(targets, t, cboard.bullet_speed, true,
+        &fixed_prediction, auto_aim::AimGeometry::whole_ekf, &takeover.snapshot);
+      if (fixed_command.control && fixed_prediction.valid && fixed_prediction.converged &&
+          fixed_prediction.fixed_center && std::isfinite(fixed_command.yaw) &&
+          std::isfinite(fixed_command.pitch)) {
+        command = fixed_command;
+        native_fire_prediction = fixed_prediction;
+      } else {
+        const bool selection_only =
+          fixed_prediction.failure == auto_aim::AimPredictionFailure::initial_selection ||
+          fixed_prediction.failure == auto_aim::AimPredictionFailure::iterative_selection;
+        const bool snapshot_still_valid = fixed_prediction.fixed_center &&
+          fixed_prediction.model_valid_until_ns > 0 &&
+          takeover_ns >= fixed_prediction.model_reference_ns &&
+          takeover_ns <= fixed_prediction.model_valid_until_ns;
+        // The actuator keeps the baseline command; only the *selection identity*
+        // stays on the fixed-centre model when the model itself is still valid.
+        command = baseline_command;
+        aimer.debug_aim_point = baseline_aim_point;
+        if (selection_only && snapshot_still_valid) {
+          fixed_center_no_face = true;
+          native_fire_prediction = fixed_prediction;
+          takeover_reason = "no_opportunity";
+        } else {
+          native_fire_prediction = baseline_fire_prediction;
+          ++predictor_solve_fallbacks;
+          takeover_reason = std::string("solve_") +
+            auto_aim::prediction_failure_name(fixed_prediction.failure);
+        }
+      }
+    }
+    const std::uint64_t selected_prediction_source = native_fire_prediction.fixed_center
+      ? native_fire_prediction.fixed_center_epoch + 1 : 0;
+    ++predictor_frames;
+    if (fixed_center_control_eligible && fixed_center_fresh_observation) ++predictor_eligible_frames;
+    if (native_fire_prediction.fixed_center) ++fixed_predictor_frames;
+    if (selected_prediction_source != fixed_center_last_control_source) ++predictor_source_transitions;
+    if (takeover_reason != fixed_center_last_control_status ||
+        selected_prediction_source != fixed_center_last_control_source ||
+        tracker.model_generation() != fixed_center_last_control_generation ||
+        takeover_time - fixed_center_last_control_time >= std::chrono::seconds(1)) {
+      const nlohmann::json record = {
+        {"schema", 1}, {"enabled", fixed_center_prediction_enabled},
+        {"predictor", native_fire_prediction.fixed_center ? "fixed_center" : "target"},
+        {"reason", takeover_reason}, {"model_generation", tracker.model_generation()},
+        {"source_key", selected_prediction_source}, {"checked_ns", takeover_ns},
+        {"frames_total", predictor_frames}, {"eligible_frames_total", predictor_eligible_frames},
+        {"fixed_frames_total", fixed_predictor_frames}, {"solve_fallbacks_total", predictor_solve_fallbacks},
+        {"source_transitions_total", predictor_source_transitions},
+        {"epoch", native_fire_prediction.fixed_center_epoch},
+        {"revision", native_fire_prediction.fixed_center_revision},
+        {"reference_ns", native_fire_prediction.model_reference_ns},
+        {"valid_until_ns", native_fire_prediction.model_valid_until_ns},
+        {"baseline_valid", baseline_prediction_valid}, {"selected_valid", native_fire_prediction.valid},
+        {"baseline_face", baseline_fire_prediction.face_id}, {"selected_face", native_fire_prediction.face_id},
+        {"baseline_prediction_ns", baseline_fire_prediction.prediction_ns},
+        {"selected_prediction_ns", native_fire_prediction.prediction_ns},
+        {"baseline_yaw_rad", baseline_command.yaw}, {"selected_yaw_rad", command.yaw}};
+      tools::logger()->info("[FIXEDCENTER_CONTROL] {}", record.dump());
+      fixed_center_last_control_status = takeover_reason;
+      fixed_center_last_control_source = selected_prediction_source;
+      fixed_center_last_control_generation = tracker.model_generation();
+      fixed_center_last_control_time = takeover_time;
+    }
+    const bool native_prediction_valid = command.control && native_fire_prediction.valid &&
+      native_fire_prediction.converged && !targets.empty() &&
+      native_fire_prediction.geometry == frame_prediction_model.geometry &&
       std::isfinite(command.yaw) && std::isfinite(command.pitch);
     const bool native_prediction_trusted =
       native_prediction_valid && tracker_converged && yaw_motion_model_trusted;
@@ -2101,10 +2459,13 @@ int main(int argc, char * argv[])
     fire_observation_clock.observe(
       tracker.model_generation(), t,
       fire_associated_measurement && tracker_converged && yaw_motion_model_trusted);
-    const int candidate_face_id = native_fire_prediction.face_id;
+    // While the fixed centre has no shootable face, keep the window's own face so
+    // the accumulating qualification stays bound to one target/model/face.
+    const int candidate_face_id = fixed_center_no_face && fire_candidate_window.active
+      ? fire_candidate_window.face : native_fire_prediction.face_id;
     const bool candidate_geometry = native_fire_prediction.whole_ekf_geometry;
     if (fire_candidate_window.active && !fire_candidate_window.matches(
-          tracker.model_generation(), candidate_face_id, candidate_geometry)) {
+          tracker.model_generation(), candidate_face_id, candidate_geometry, selected_prediction_source)) {
       fire_candidate_window.reset();
       xuc_fire_window_selector.reset();
     }
@@ -2119,11 +2480,28 @@ int main(int argc, char * argv[])
         frame_fire_gates, fire_candidate_window, fire_observation_clock, now,
         tracker.model_generation(), candidate_face_id, candidate_geometry,
         tracker.state() == "tracking", fire_temporary_loss, xuc_fire_inhibit_temp_lost,
-        fire_associated_measurement, xuc_fire_temp_lost_max_age_ms, fire_window_policy.required_frames);
+        fire_associated_measurement, xuc_fire_temp_lost_max_age_ms, fire_window_policy.required_frames,
+        selected_prediction_source);
       gates.target = !targets.empty();
       gates.model = model_rebuild.fire_allowed() && tracker_converged &&
         yaw_motion_model_trusted;
-      gates.prediction = native_prediction_valid && native_fire_prediction.valid;
+      const auto checked_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+        now.time_since_epoch()).count();
+      const bool fixed_window_ok = !native_fire_prediction.fixed_center ||
+        (checked_ns >= native_fire_prediction.model_reference_ns &&
+         checked_ns <= native_fire_prediction.model_valid_until_ns);
+      if (fixed_center_no_face) {
+        // Model still valid, this frame just has no selectable plate: keep the
+        // prediction source alive so qualification is not thrown away.
+        gates.prediction = native_fire_prediction.fixed_center && fixed_window_ok &&
+          !fire_temporary_loss;
+      } else {
+        gates.prediction = native_prediction_valid && native_fire_prediction.valid &&
+          native_fire_prediction.converged && fixed_window_ok &&
+          (!native_fire_prediction.fixed_center || !fire_temporary_loss);
+      }
+      // A usable aim point is required to SEND, never to keep qualifying.
+      gates.aim = native_prediction_valid;
       gates.control = command.control && std::isfinite(command.yaw) && std::isfinite(command.pitch);
       gates.auto_mode = mode == io::Mode::auto_aim &&
         (!xuc.enabled() || xuc.mode() == static_cast<uint8_t>(io::Mode::auto_aim));
@@ -2165,6 +2543,9 @@ int main(int argc, char * argv[])
         gates.yaw = gates.yaw && std::isfinite(fire_actual_predicted_yaw_error_rad) &&
           std::abs(fire_actual_predicted_yaw_error_rad) <= xuc_gyro_predicted_yaw_tolerance_rad;
       }
+      // No selectable plate means no yaw to judge; the send-side aim gate already
+      // forbids firing. Judging a stale/baseline yaw here would kill the window.
+      if (fixed_center_no_face) gates.yaw = true;
       if (fire_temporary_loss) {
         gates.pitch = direct_pitch_initialized && std::isfinite(command.pitch) &&
           std::isfinite(xuc.imu_pitch()) &&
@@ -2247,9 +2628,11 @@ int main(int argc, char * argv[])
       bool face_valid = false;
       double face_error_rad = INFINITY;
       if (!targets.empty() && aimer.debug_aim_point.valid) {
-        const auto tracked_x = targets.front().ekf_x();
+        const auto & tracked_x = frame_prediction_model.state;
         if (tracked_x.size() >= 3) {
-          const double center_bearing = std::atan2(tracked_x[2], tracked_x[0]);
+          const double center_bearing = native_fire_prediction.fixed_center
+            ? std::atan2(takeover.snapshot.model.state.center_y, takeover.snapshot.model.state.center_x)
+            : std::atan2(tracked_x[2], tracked_x[0]);
           face_error_rad = std::abs(std::remainder(
             aimer.debug_aim_point.xyza[3] - center_bearing, 2.0 * M_PI));
           face_valid = std::isfinite(face_error_rad);
@@ -2267,14 +2650,8 @@ int main(int argc, char * argv[])
           std::abs(gyro_omega_rad_s) > xuc_phase_decision_speed_rad_s
             ? xuc_phase_high_speed_delay_s : xuc_phase_low_speed_delay_s;
         const double flight_s = robust_target_range_m / xuc_projectile_speed_mps;
-        // 相位源必须与 AimGeometry 同源：whole_ekf 时选板/预测用的是主 EKF 的
-        // x[6]，而 gyro_body_phase_rad 来自被 YawESKF 覆盖的 ekf_x()[6]，两者实测
-        // 差约 30°，拿它算弹着相位会让弹着相位诊断和瞄准链路对不上。
-        const auto & whole_phase_state = targets.front().ekf().x;
-        const double body_phase_used =
-          (native_fire_prediction.whole_ekf_geometry && whole_phase_state.size() == 11)
-            ? whole_phase_state[6]
-            : gyro_body_phase_rad;
+        // Both the phase and its rate history use the frame's selected model.
+        const double body_phase_used = gyro_body_phase_rad;
         const double phase_at_impact =
           body_phase_used + body_phase_rate_window *
             (processing_age_s + shot_delay_s + flight_s);
@@ -2476,11 +2853,13 @@ int main(int argc, char * argv[])
                 std::chrono::steady_clock::now() - t).count());
             future_target.predict(
               processing_age_s + event_solution.time_until_hit_center_s);
-            const auto future_x = future_target.ekf_x();
+            const auto future_x = native_fire_prediction.whole_ekf_geometry
+              ? future_target.ekf().x : future_target.ekf_x();
             if (future_x.size() >= 3) {
               const double future_center_yaw = std::atan2(future_x[2], future_x[0]);
               std::vector<auto_aim::GyroFaceSelector::Candidate> face_candidates;
-              const auto future_faces = future_target.armor_xyza_list();
+              const auto future_faces = native_fire_prediction.whole_ekf_geometry
+                ? future_target.whole_ekf_armor_xyza_list() : future_target.armor_xyza_list();
               face_candidates.reserve(future_faces.size());
               for (std::size_t face_id = 0; face_id < future_faces.size(); ++face_id) {
                 face_candidates.push_back({
@@ -2729,19 +3108,24 @@ int main(int argc, char * argv[])
           gyro_omega_rad_s);
       }
       if (fire_candidate) {
+        // Without a selectable plate there is no fresh aim yaw; keep the window's
+        // own reference so the phase-continuity check compares like with like.
         const double candidate_face_yaw_rad =
-          fire_window_policy.uses_event_clock() && gyro_event_face_valid
-          ? static_cast<double>(gyro_event_face_id) * M_PI / 2.0
-          : aimer.debug_aim_point.xyza[3];
-        if (!fire_temporary_loss && predictive_fire_active && xuc_fire_candidate_active &&
+          fixed_center_no_face && fire_candidate_window.active
+          ? fire_candidate_window.face_yaw_rad
+          : (fire_window_policy.uses_event_clock() && gyro_event_face_valid
+              ? static_cast<double>(gyro_event_face_id) * M_PI / 2.0
+              : aimer.debug_aim_point.xyza[3]);
+        if (!fixed_center_no_face && !fire_temporary_loss && predictive_fire_active &&
+            xuc_fire_candidate_active &&
             std::isfinite(xuc_fire_candidate_face_yaw_rad) &&
             std::isfinite(candidate_face_yaw_rad)) {
-          const double phase_step_rad = std::abs(std::remainder(
-            candidate_face_yaw_rad - xuc_fire_candidate_face_yaw_rad,
-            2.0 * M_PI));
+          const double phase_step_rad = fire_window_policy.uses_event_clock()
+            ? 0.0 : fire_candidate_window.phase_discontinuity(
+              candidate_face_yaw_rad, native_fire_prediction.prediction_ns);
           if (phase_step_rad > xuc_gyro_candidate_max_phase_step_rad) {
             tools::logger()->info(
-              "[XUC][FIRE] candidate face switched by {:.1f} deg; restarting window",
+              "[XUC][FIRE] candidate phase discontinuity {:.1f} deg; restarting window",
               phase_step_rad * 180.0 / M_PI);
             xuc_fire_candidate_active = false;
             xuc_fire_ready_logged = false;
@@ -2752,7 +3136,9 @@ int main(int argc, char * argv[])
         const bool candidate_was_active = xuc_fire_candidate_active;
         fire_candidate_window.update(
           true, fire_temporary_loss, tracker.model_generation(), candidate_face_id,
-          candidate_geometry, t, candidate_face_yaw_rad, xuc_fire_candidate_hold_frames);
+          candidate_geometry, t, candidate_face_yaw_rad, xuc_fire_candidate_hold_frames,
+          native_fire_prediction.prediction_ns, native_fire_prediction.angular_velocity_rad_s,
+          selected_prediction_source);
         if (!candidate_was_active && xuc_fire_candidate_active) {
           tools::logger()->info("[XUC][FIRE] stable-window candidate started");
         }
@@ -2862,7 +3248,7 @@ int main(int argc, char * argv[])
         } else {
           fire_candidate_window.update(
             false, false, tracker.model_generation(), candidate_face_id, candidate_geometry,
-            t, INFINITY, xuc_fire_candidate_hold_frames);
+            t, INFINITY, xuc_fire_candidate_hold_frames, 0, NAN, selected_prediction_source);
         }
         if (was_active && !xuc_fire_candidate_active) {
             tools::logger()->info(
@@ -2888,7 +3274,9 @@ int main(int argc, char * argv[])
       fire_candidate_window.update(
         gates.candidate_allowed(fire_temporary_loss), fire_temporary_loss,
         tracker.model_generation(), candidate_face_id, candidate_geometry, t,
-        aimer.debug_aim_point.xyza[3], xuc_fire_candidate_hold_frames);
+        aimer.debug_aim_point.xyza[3], xuc_fire_candidate_hold_frames,
+        native_fire_prediction.prediction_ns, native_fire_prediction.angular_velocity_rad_s,
+        selected_prediction_source);
       fire_timing_ready = native_shoot && !measurement_fallback;
       command.shoot = evaluate_fire_gates(std::chrono::steady_clock::now()).request_allowed();
     }
@@ -3021,7 +3409,8 @@ int main(int argc, char * argv[])
     if (++dryrun_log_counter % 20 == 0) {
       constexpr double RAD2DEG = 180.0 / M_PI;
       if (!targets.empty()) {
-        auto tracked_xyza_list = targets.front().armor_xyza_list();
+        auto tracked_xyza_list = native_fire_prediction.whole_ekf_geometry
+          ? targets.front().whole_ekf_armor_xyza_list() : targets.front().armor_xyza_list();
         if (!tracked_xyza_list.empty() && direct_measurement_armor != nullptr) {
           const auto & measured_gimbal = direct_measurement_armor->xyz_in_gimbal;
           const auto & measured_world = direct_measurement_armor->xyz_in_world;
@@ -3416,7 +3805,16 @@ int main(int argc, char * argv[])
           {"tx_call_ns", tx_call_matches ? tx_call_ns : int64_t{0}},
           {"valid", native_fire_prediction.valid},
           {"converged", native_fire_prediction.converged},
-          {"geometry", native_fire_prediction.whole_ekf_geometry ? "main_ekf" : "existing"},
+          {"fixed_face", native_fire_prediction.fixed_face},
+          {"predictor", native_fire_prediction.fixed_center ? "fixed_center" : "target"},
+          {"prediction_source_key", selected_prediction_source},
+          {"fixed_center_epoch", native_fire_prediction.fixed_center_epoch},
+          {"fixed_center_revision", native_fire_prediction.fixed_center_revision},
+          {"model_reference_ns", native_fire_prediction.model_reference_ns},
+          {"model_valid_until_ns", native_fire_prediction.model_valid_until_ns},
+          {"model_omega_rad_s", native_fire_prediction.angular_velocity_rad_s},
+          {"geometry", native_fire_prediction.fixed_center ? "fixed_center" :
+             (native_fire_prediction.whole_ekf_geometry ? "main_ekf" : "existing")},
           {"face", native_fire_prediction.face_id},
           {"iterations", native_fire_prediction.iterations},
           {"base_prediction_ns", native_fire_prediction.base_prediction_ns},
@@ -3444,8 +3842,19 @@ int main(int argc, char * argv[])
         }
         if (!targets.empty()) {
           const auto & audit_target = targets.front();
-          const auto model_state = native_fire_prediction.whole_ekf_geometry
+          auto model_state = native_fire_prediction.whole_ekf_geometry
             ? audit_target.ekf().x : audit_target.ekf_x();
+          if (native_fire_prediction.fixed_center) {
+            const auto & s = takeover.snapshot.model.state;
+            model_state = Eigen::VectorXd::Zero(11);
+            model_state[0] = s.center_x; model_state[2] = s.center_y;
+            model_state[4] = s.height_m[0];
+            model_state[6] = std::remainder(s.phase_rad + s.omega_rad_s *
+              ((image_ns - takeover.snapshot.model.reference_ns) / 1e9), 2.0 * M_PI);
+            model_state[7] = s.omega_rad_s; model_state[8] = s.radius_m[0];
+            model_state[9] = s.radius_m[1] - s.radius_m[0];
+            model_state[10] = s.height_m[1] - s.height_m[0];
+          }
           prediction_log["model_state"] = aim_audit_values(model_state);
           prediction_log["raw_state"] = aim_audit_values(audit_target.ekf().x);
           prediction_log["armor_count"] = audit_target.armor_num();
@@ -3533,15 +3942,28 @@ int main(int argc, char * argv[])
 
     if (!competition_headless) {
       // 绘制识别与预测结果
+      // 仅提亮显示副本；检测、跟踪和瞄准继续使用原始相机图像。
+      static const cv::Mat display_gamma_lut = [] {
+        constexpr double display_gamma = 2.0;
+        cv::Mat lut(1, 256, CV_8U);
+        for (int i = 0; i < 256; ++i) {
+          lut.at<unsigned char>(0, i) = cv::saturate_cast<unsigned char>(
+            255.0 * std::pow(i / 255.0, 1.0 / display_gamma));
+        }
+        return lut;
+      }();
+      cv::Mat display_img;
+      cv::LUT(img, display_gamma_lut, display_img);
       if (!targets.empty() && tracker_converged && yaw_motion_model_trusted) {
         auto target = targets.front();
 
         // 绘制跟踪到的所有装甲板位置（绿色）
-        std::vector<Eigen::Vector4d> armor_xyza_list = target.armor_xyza_list();
+        std::vector<Eigen::Vector4d> armor_xyza_list = native_fire_prediction.whole_ekf_geometry
+          ? target.whole_ekf_armor_xyza_list() : target.armor_xyza_list();
         for (const Eigen::Vector4d & xyza : armor_xyza_list) {
           auto image_points =
             solver.reproject_armor(xyza.head(3), xyza[3], target.armor_type, target.name);
-          tools::draw_points(img, image_points, {0, 255, 0});
+          tools::draw_points(display_img, image_points, {0, 255, 0});
         }
 
         // 绘制预测的瞄准位置（红色）
@@ -3549,13 +3971,13 @@ int main(int argc, char * argv[])
           Eigen::Vector4d aim_xyza = aimer.debug_aim_point.xyza;
           auto image_points =
             solver.reproject_armor(aim_xyza.head(3), aim_xyza[3], target.armor_type, target.name);
-          tools::draw_points(img, image_points, {0, 0, 255});
+          tools::draw_points(display_img, image_points, {0, 0, 255});
         }
       }
 
-      cv::resize(img, img, {}, 0.5, 0.5);  // 显示时缩小图片尺寸
+      cv::resize(display_img, display_img, {}, 0.5, 0.5);  // 显示时缩小图片尺寸
       // 相机输出为 BGR，imshow 直接可用
-      cv::imshow("reprojection", img);
+      cv::imshow("reprojection", display_img);
       auto key = cv::waitKey(1);
       if (key == 'q') break;
     }
