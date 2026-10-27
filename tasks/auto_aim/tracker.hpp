@@ -103,6 +103,9 @@ private:
 
   void state_machine(bool found);
 
+  // Solve and reject observations before priority switching or estimator use.
+  void solve_observations(std::list<Armor> & armors);
+
   bool set_target(std::list<Armor> & armors, std::chrono::steady_clock::time_point t);
   Armor * select_target(std::list<Armor> & armors);
   bool should_switch_target(const std::list<Armor> & armors);

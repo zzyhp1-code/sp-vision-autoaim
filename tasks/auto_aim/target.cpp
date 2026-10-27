@@ -476,6 +476,16 @@ Eigen::VectorXd Target::ekf_x() const
 
 const tools::ExtendedKalmanFilter & Target::ekf() const { return ekf_; }
 
+bool Target::use_whole_ekf_geometry(double decision_speed) const
+{
+  const auto & x = ekf_.x;
+  const auto & P = ekf_.P;
+  return armor_num_ == 4 && name != ArmorName::outpost &&
+    x.size() == 11 && x.allFinite() && P.rows() == 11 && P.cols() == 11 && P.allFinite() &&
+    x[8] > 0.05 && x[8] < 0.5 && x[8] + x[9] > 0.05 && x[8] + x[9] < 0.5 &&
+    std::isfinite(decision_speed) && std::abs(x[7]) > decision_speed;
+}
+
 bool Target::yaw_eskf_trusted() const { return yaw_eskf_.trusted(); }
 
 double Target::yaw_eskf_angle() const { return yaw_eskf_.angle(); }

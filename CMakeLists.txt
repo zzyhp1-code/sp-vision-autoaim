@@ -273,6 +273,17 @@ add_executable(tracker_reset_test tasks/auto_aim/tracker_reset_test.cpp)
 target_link_libraries(tracker_reset_test ${OpenCV_LIBS} fmt::fmt yaml-cpp auto_aim tools io)
 add_executable(aimer_prediction_test tasks/auto_aim/aimer_prediction_test.cpp)
 target_link_libraries(aimer_prediction_test ${OpenCV_LIBS} fmt::fmt yaml-cpp auto_aim tools io)
+add_executable(solver_validation_test tasks/auto_aim/solver_validation_test.cpp)
+target_link_libraries(solver_validation_test ${OpenCV_LIBS} fmt::fmt yaml-cpp auto_aim tools io)
+add_executable(face_prediction_residual_test tasks/auto_aim/face_prediction_residual_test.cpp)
+add_executable(fixed_center_shadow_test tasks/auto_aim/fixed_center_shadow_test.cpp)
+add_executable(fixed_center_prediction_audit_test tasks/auto_aim/fixed_center_prediction_audit_test.cpp)
+add_executable(fixed_center_takeover_test tasks/auto_aim/fixed_center_takeover_test.cpp)
+if(UNIX AND NOT APPLE)
+  add_executable(xuc_packet_timing_test tests/xuc_packet_timing_test.cpp)
+  target_link_libraries(xuc_packet_timing_test fmt::fmt yaml-cpp io tools util)
+  target_compile_options(xuc_packet_timing_test PRIVATE -UNDEBUG)
+endif()
 add_executable(
   adaptive_corner_refiner_test
   tasks/auto_aim/adaptive_corner_refiner_test.cpp
@@ -299,6 +310,11 @@ foreach(estimator_test
     model_rebuild_test
     tracker_reset_test
     aimer_prediction_test
+    solver_validation_test
+    face_prediction_residual_test
+    fixed_center_shadow_test
+    fixed_center_prediction_audit_test
+    fixed_center_takeover_test
     adaptive_corner_refiner_test
     ekf_consistency_test
     iterated_ekf_test)

@@ -10,6 +10,7 @@ void draw_point(cv::Mat & img, const cv::Point & point, const cv::Scalar & color
 void draw_points(
   cv::Mat & img, const std::vector<cv::Point> & points, const cv::Scalar & color, int thickness)
 {
+  if (points.empty()) return;
   std::vector<std::vector<cv::Point>> contours = {points};
   cv::drawContours(img, contours, -1, color, thickness);
 }

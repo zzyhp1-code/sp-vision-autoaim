@@ -138,6 +138,19 @@ int Tracker::primary_detection_index() const { return primary_detection_index_; 
 
 int Tracker::primary_face_id() const { return primary_face_id_; }
 
+void Tracker::solve_observations(std::list<Armor> & armors)
+{
+  last_associations_.clear();
+  primary_detection_index_ = -1;
+  primary_face_id_ = -1;
+  const auto detection_count = armors.size();
+  armors.remove_if([this](Armor & armor) { return !solver_.solve(armor); });
+  if (armors.size() != detection_count) {
+    tools::logger()->debug(
+      "[Tracker][PNP] rejected={} detections={}", detection_count - armors.size(), detection_count);
+  }
+}
+
 std::list<Target> Tracker::track(
   std::list<Armor> & armors, std::chrono::steady_clock::time_point t, bool use_enemy_color)
 {
@@ -145,12 +158,13 @@ std::list<Target> Tracker::track(
   last_timestamp_ = t;
 
   // 时间间隔过长，说明可能发生了相机离线
-  if (state_ != "lost" && dt > 0.1) {
+  if (state_ != "lost" && dt > 0.2) {
     tools::logger()->warn("[Tracker] Large dt: {:.3f}s", dt);
     state_ = "lost";
   }
   // 过滤掉非我方装甲板
   armors.remove_if([&](const auto_aim::Armor & a) { return a.color != enemy_color_; });
+  solve_observations(armors);
 
   // 过滤前哨站顶部装甲板
   // armors.remove_if([this](const auto_aim::Armor & a) {
@@ -251,10 +265,12 @@ std::tuple<omniperception::DetectionResult, std::list<Target>> Tracker::track(
   last_timestamp_ = t;
 
   // 时间间隔过长，说明可能发生了相机离线
-  if (state_ != "lost" && dt > 0.1) {
+  if (state_ != "lost" && dt > 0.2) {
     tools::logger()->warn("[Tracker] Large dt: {:.3f}s", dt);
     state_ = "lost";
   }
+
+  solve_observations(armors);
 
   // 优先选择靠近图像中心的装甲板
   armors.sort([](const Armor & a, const Armor & b) {
@@ -472,8 +488,6 @@ Armor * Tracker::select_target(std::list<Armor> & armors)
   Armor * best = nullptr;
   double best_score = std::numeric_limits<double>::infinity();
   for (auto & armor : armors) {
-    solver_.solve(armor);
-    if (!armor.xyz_in_world.allFinite()) continue;
     const double center_score = std::hypot(armor.center_norm.x, armor.center_norm.y);
     const double range_score = armor.xyz_in_world.norm() / 10.0;
     // Priority remains dominant.  Distance and image-center position break
@@ -522,6 +536,11 @@ bool Tracker::update_target(std::list<Armor> & armors, std::chrono::steady_clock
   // sequentially with every same-class detection in one frame.  During a face
   // handover that could pull body yaw toward two different armor ids at the
   // same timestamp and create a long/short phase-crossing pair.
+  // Association is a measurement update: retain its established filtered
+  // phase reference. Switching it to raw EKF phase based on an instantaneous
+  // speed threshold adds a feedback discontinuity during reacquisition.
+  // Aimer independently keeps one geometry throughout each future solve.
+  const auto association_state = target_.ekf_x();
   const auto predicted_faces = target_.armor_xyza_list();
   struct Candidate
   {
@@ -584,7 +603,6 @@ bool Tracker::update_target(std::list<Armor> & armors, std::chrono::steady_clock
       continue;
     }
 
-    solver_.solve(armor);
     const double observed_range_m = std::max(0.05, armor.ypd_in_world[2]);
     const double detection_scale_px = std::max(
       30.0, std::sqrt(std::max(1.0, static_cast<double>(armor.box.area()))));
@@ -655,7 +673,7 @@ bool Tracker::update_target(std::list<Armor> & armors, std::chrono::steady_clock
       }
 
       if (std::isfinite(cost) && cost <= association_max_cost_) {
-        const auto state = target_.ekf_x();
+        const auto & state = association_state;
         const double center_yaw = std::atan2(state[2], state[0]);
         candidates.push_back({
           &armor, current_detection_index, static_cast<int>(id), cost,
@@ -718,7 +736,7 @@ bool Tracker::update_target(std::list<Armor> & armors, std::chrono::steady_clock
   primary_face_id_ = primary_it->face_id;
   // Copy the primary before `selected` is possibly rewritten below; primary_it
   // is an iterator into `selected` and would dangle afterwards.
-  const Candidate primary = *primary_it;
+  Candidate primary = *primary_it;
 
   // ---------------------------------------------------------------------------
   // Geometric plausibility gate for the off-axis faces.
@@ -736,7 +754,7 @@ bool Tracker::update_target(std::list<Armor> & armors, std::chrono::steady_clock
     constexpr double kMaxPlausibleRadiusDelta = 0.10;  // metres, |r2 - r1|
     constexpr double kMaxPlausibleHeightDelta = 0.10;  // metres, |h|
 
-    const auto state = target_.ekf_x();
+    const auto & state = association_state;
     if (state.size() >= 11) {
       const bool geometry_already_broken =
         std::abs(state[9]) > kMaxPlausibleRadiusDelta ||
@@ -768,6 +786,16 @@ bool Tracker::update_target(std::list<Armor> & armors, std::chrono::steady_clock
     }
   }
 
+  // The geometry filter may remove the old primary. Re-select from the actual
+  // surviving assignment before exposing IDs or choosing the single update.
+  primary = *std::min_element(selected.begin(), selected.end(), [](const Candidate & a, const Candidate & b) {
+    if (std::abs(a.alignment_rad - b.alignment_rad) > 1e-6)
+      return a.alignment_rad < b.alignment_rad;
+    return a.cost < b.cost;
+  });
+  primary_detection_index_ = primary.detection_index;
+  primary_face_id_ = primary.face_id;
+
   // Preserve the proven single-observation path on fixed and slow targets.
   // Joint observations are enabled only after the target is clearly in gyro
   // motion, where two simultaneously visible faces materially improve the
@@ -780,9 +808,11 @@ bool Tracker::update_target(std::list<Armor> & armors, std::chrono::steady_clock
   std::vector<std::pair<Armor, int>> batch;
   batch.reserve(use_batch ? selected.size() : 1);
   for (const auto & association : selected) {
-    last_associations_.push_back({
-      association.detection_index, association.face_id, association.cost});
     if (use_batch || association.detection_index == primary_detection_index_) {
+      // These are the observations passed into Target::update[_batch]. The EKF
+      // records NIS diagnostically; it has no per-observation acceptance gate.
+      last_associations_.push_back({
+        association.detection_index, association.face_id, association.cost});
       batch.emplace_back(*association.armor, association.face_id);
     }
   }
@@ -791,8 +821,8 @@ bool Tracker::update_target(std::list<Armor> & armors, std::chrono::steady_clock
   if (++association_log_counter % 10 == 0) {
     tools::logger()->info(
       "[ASSOC] primary_face={} matches={} cost={:.3f} detections={} confidence={:.2f}",
-      primary_face_id_, batch.size(), primary_it->cost, armors.size(),
-      primary_it->armor->confidence);
+      primary_face_id_, batch.size(), primary.cost, armors.size(),
+      primary.armor->confidence);
   }
 
   // Diagnostic: dump every surviving candidate so a face-association jump can be
@@ -843,7 +873,7 @@ bool Tracker::update_target(std::list<Armor> & armors, std::chrono::steady_clock
     // Flag any excursion of l/h away from 0: those two states are only written
     // when face 1 or 3 is associated, so a nonzero value pinpoints the frame at
     // which an odd face was accepted.
-    const auto st = target_.ekf_x();
+    const auto & st = association_state;
     if (st.size() >= 11) {
       tools::logger()->info(
         "[ASSOC_D] ekf r={:.3f} l={:.3f} h={:.3f} yaw={:.1f}deg omega={:+.3f}{}",
@@ -877,7 +907,7 @@ bool Tracker::update_target(std::list<Armor> & armors, std::chrono::steady_clock
   if (use_batch) {
     target_.update_batch(batch, primary_face_id_);
   } else {
-    target_.update(*primary_it->armor, primary_face_id_);
+    target_.update(*primary.armor, primary_face_id_);
   }
   return true;
 }

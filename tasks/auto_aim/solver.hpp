@@ -31,7 +31,12 @@ public:
 
   void set_R_gimbal2world(const Eigen::Quaterniond & q);
 
-  void solve(Armor & armor) const;
+  // False invalidates every pose field, including poses cached by a caller.
+  bool solve(Armor & armor) const;
+
+  // Validate a PnP candidate in camera coordinates, including every corner's depth.
+  static bool valid_camera_pose(
+    const cv::Vec3d & rvec, const cv::Vec3d & tvec, ArmorType type);
 
   std::vector<cv::Point2f> reproject_armor(
     const Eigen::Vector3d & xyz_in_world, double yaw, ArmorType type, ArmorName name,
@@ -52,7 +57,8 @@ private:
   Eigen::Vector3d t_camera2gimbal_;
   Eigen::Matrix3d R_gimbal2world_;
 
-  void optimize_yaw(Armor & armor) const;
+  bool solve_pose(Armor & armor) const;
+  bool optimize_yaw(Armor & armor) const;
 
   double armor_reprojection_error(const Armor & armor, double yaw, const double & inclined) const;
   double SJTU_cost(

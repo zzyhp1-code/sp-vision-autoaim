@@ -28,11 +28,11 @@ public:
     double huber_threshold = 2.5;
   };
 
-  ArmorName name;
-  ArmorType armor_type;
-  ArmorPriority priority;
-  bool jumped;
-  int last_id;  // debug only
+  ArmorName name = ArmorName::not_armor;
+  ArmorType armor_type = ArmorType::small;
+  ArmorPriority priority = ArmorPriority::fifth;
+  bool jumped = false;
+  int last_id = 0;  // debug only
 
   Target() = default;
   Target(
@@ -77,6 +77,8 @@ public:
   // 小陀螺时 Aimer 走这条路径：YawESKF 的角速度在换面节律上有 0.5~0.9 rad/s 的摆动，
   // 用它外推弹着时刻会把选中的板选到 45° 以外（2026-10-19 借鉴 Fujian_AutoAim）。
   std::vector<Eigen::Vector4d> whole_ekf_armor_xyza_list() const;
+  // Future prediction ownership; measurement association retains filtered phase.
+  bool use_whole_ekf_geometry(double decision_speed) const;
   int armor_num() const;
 
   bool diverged() const;
@@ -88,17 +90,17 @@ public:
   bool checkinit();
 
 private:
-  int armor_num_;
-  int switch_count_;
-  int update_count_;
+  int armor_num_ = 0;
+  int switch_count_ = 0;
+  int update_count_ = 0;
 
-  bool is_switch_, is_converged_;
+  bool is_switch_ = false, is_converged_ = false;
 
   tools::ExtendedKalmanFilter ekf_;
   YawESKF yaw_eskf_;
   std::array<ArmorMotionFilter, 4> armor_motion_filters_;
   IteratedUpdateConfig iterated_update_config_;
-  std::chrono::steady_clock::time_point t_;
+  std::chrono::steady_clock::time_point t_{};
 
   void update_ypda(const Armor & armor, int id);  // yaw pitch distance angle
   void update_yaw_eskf(const Armor & armor, int id);

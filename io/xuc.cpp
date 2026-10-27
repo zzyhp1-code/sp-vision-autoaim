@@ -273,14 +273,17 @@ void XucSender::send(const Command & cmd)
 // 接收线程：读串口字节 → 扫描 'S''P' + CRC16 校验 → 解析 TxPacket_TJ（20 字节）
 void XucSender::recv_loop()
 {
-  uint8_t scratch[64];
+  uint8_t scratch[sizeof(XucTxPacket)];
   std::vector<uint8_t> buf;
   buf.reserve(sizeof(XucTxPacket) * 2);
 
   while (!recv_quit_.load(std::memory_order_relaxed)) {
     size_t n = 0;
     try {
-      n = serial_.read(scratch, sizeof(scratch));
+      // The parser leaves less than one packet in buf. Request only its
+      // missing bytes: read(64) otherwise waits until timeout even after a
+      // complete 20-byte feedback packet has arrived, batching timestamps.
+      n = serial_.read(scratch, sizeof(XucTxPacket) - buf.size());
     } catch (const std::exception &) {
       break;
     }

@@ -1724,6 +1724,7 @@ int main(int argc, char * argv[])
     auto_aim::FacePredictionResidual::Context fixed_center_context;
     bool fixed_center_control_eligible = false;
     bool fixed_center_fresh_observation = false;
+    nlohmann::json fixed_center_eligibility_terms = nlohmann::json::object();
     // Score raw geometric forecasts against later same-face image-time poses.
     // Visual consistency is diagnostic only; it never changes commands or gates.
     if (!targets.empty() && frame_prediction_model.finite) {
@@ -1755,6 +1756,16 @@ int main(int argc, char * argv[])
       const auto frame_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(t.time_since_epoch()).count();
       fixed_center_context = context;
       fixed_center_fresh_observation = !observations.empty() && tracker.state() == "tracking";
+      // Keep the term bits: "ineligible" occupied 30-49% of the field session and
+      // the aggregate reason alone could not tell which condition was responsible.
+      fixed_center_eligibility_terms = {
+        {"converged", tracker_converged},
+        {"yaw_trusted", yaw_motion_model_trusted},
+        {"jumped", targets.front().jumped},
+        {"armor4", targets.front().armor_num() == 4},
+        {"whole_ekf", native_fire_prediction.whole_ekf_geometry},
+        {"high_speed", rotation_model.mode == auto_aim::RotationModelManager::Mode::high_speed_phase},
+        {"phase_gate_off", xuc_fire_phase_window_rad <= 0.0}};
       fixed_center_control_eligible = tracker_converged && yaw_motion_model_trusted && targets.front().jumped &&
         targets.front().armor_num() == 4 && native_fire_prediction.whole_ekf_geometry &&
         rotation_model.mode == auto_aim::RotationModelManager::Mode::high_speed_phase &&
@@ -1954,9 +1965,17 @@ int main(int argc, char * argv[])
         command = fixed_command;
         native_fire_prediction = fixed_prediction;
       } else {
+        // Every selection failure means "no plate inside the shootable cone on
+        // this frame", which is the normal ~10 deg hand-over gap of a spinning
+        // chassis (60+20 deg window vs 90 deg face spacing), not model failure.
+        // Field log 2026-10-28_01-29-51: 214 of 221 solve fallbacks were
+        // final_selection, i.e. exactly this gap. Only a broken solve
+        // (trajectory / non-finite / not-converged / expired snapshot) may
+        // return the frame to the baseline model and count as a fallback.
         const bool selection_only =
           fixed_prediction.failure == auto_aim::AimPredictionFailure::initial_selection ||
-          fixed_prediction.failure == auto_aim::AimPredictionFailure::iterative_selection;
+          fixed_prediction.failure == auto_aim::AimPredictionFailure::iterative_selection ||
+          fixed_prediction.failure == auto_aim::AimPredictionFailure::final_selection;
         const bool snapshot_still_valid = fixed_prediction.fixed_center &&
           fixed_prediction.model_valid_until_ns > 0 &&
           takeover_ns >= fixed_prediction.model_reference_ns &&
@@ -1996,6 +2015,7 @@ int main(int argc, char * argv[])
         {"fixed_frames_total", fixed_predictor_frames}, {"solve_fallbacks_total", predictor_solve_fallbacks},
         {"source_transitions_total", predictor_source_transitions},
         {"epoch", native_fire_prediction.fixed_center_epoch},
+        {"eligible_terms", fixed_center_eligibility_terms},
         {"revision", native_fire_prediction.fixed_center_revision},
         {"reference_ns", native_fire_prediction.model_reference_ns},
         {"valid_until_ns", native_fire_prediction.model_valid_until_ns},
@@ -2543,9 +2563,11 @@ int main(int argc, char * argv[])
         gates.yaw = gates.yaw && std::isfinite(fire_actual_predicted_yaw_error_rad) &&
           std::abs(fire_actual_predicted_yaw_error_rad) <= xuc_gyro_predicted_yaw_tolerance_rad;
       }
-      // No selectable plate means no yaw to judge; the send-side aim gate already
-      // forbids firing. Judging a stale/baseline yaw here would kill the window.
-      if (fixed_center_no_face) gates.yaw = true;
+      // No selectable plate means no yaw and no command to judge; the send-only
+      // aim gate already forbids firing. Judging a stale/baseline yaw or a
+      // missing baseline aim point here would kill the window that the whole
+      // no-opportunity path exists to preserve.
+      if (fixed_center_no_face) { gates.yaw = true; gates.control = true; }
       if (fire_temporary_loss) {
         gates.pitch = direct_pitch_initialized && std::isfinite(command.pitch) &&
           std::isfinite(xuc.imu_pitch()) &&

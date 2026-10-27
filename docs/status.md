@@ -1,5 +1,35 @@
 # 当前状态
 
+## 2026-10-28：命中率 34%/26% —— 弹到瞬间根本没对准
+
+两次试射（03-44-09：58 请求；03-47-40：61 请求）都跑在「冷却已解耦、但
+`no_opportunity` 仍空转」的中间版本上：现场 `src/standard.cpp` 里 `final_selection`
+出现 0 次（本机现已补上）。请求频率确实上来了（间隔中位 1.43 s，只有 12–17% 贴 1.1 s 下限，
+说明机会而非门限是瓶颈），但命中率继续下降到 34% / 26%。
+
+**新增可复核指标**（`scripts/analysis/impact_alignment.py`）：对每条请求，在 Aimer 自己的
+`prediction_ns` 处插值后续**实测**装甲姿态，与炮口角比较，按 90° 折角消除板序：
+
+| 日志 | 配对样本 | 中位偏差 | P90 | ≤3° | 等效时序差 |
+|---|---:|---:|---:|---:|---:|
+| 03-47-40 | 18 | 10.02° | 15.3° | 5.6% | 37.5 ms |
+| 02-10-45 | 31 | 8.50° | 13.4° | 9.7% | 31.1 ms |
+
+板上半角在 4.5 m 处只有约 0.98°，即时间窗约 ±4 ms。**几乎没有一发在几何上对准**，
+26–34% 的命中来自真实出膛与假设时刻的随机错位。9–10°、跨多轮稳定存在，且与「弹丸滞后」
+的现场观察同向——这同时解释了两件事：命中率天花板，以及为何加减确认帧只能改变数量而不是质量。
+
+**已做**：现场时延回到 0.170 / 0.165（之前 0.150 把提前量又减了约 5°，方向与观察相反）；
+补 `final_selection` 使「无机会≠模型失败」真正生效；`[FIXEDCENTER_CONTROL]` 增加
+`eligible_terms` 分项（此前 `ineligible` 占 30–49% 时间、`context_changed` 占 26%、
+`ready` 仅 10–19%，但无法定位是哪一项）；本地配置与现场对齐为 3 帧 / 1100 ms。
+小电脑已用整棵树重编 `standard`，10 项离线测试全部通过。
+
+**下一步判定**：同一场里先打 50 发（0.170）再打 50 发（0.190）。若中位偏差随 +20 ms
+降到约 4–5°，则为时序问题，按残差外推精确值；若不降反升，则符号相反，应向 0.130 反向。
+若加时延几乎不变，则剩余部分是固定偏置，需要动 yaw 基准（boresight），而不是继续加延时。
+建议再夹一段低速（ω≈1.5）对照：纯时序误差的角度残差会随 ω 按比例缩小，固定偏置不会。
+
 ## 2026-10-28：拆开「来源切换 / 冷却 / 资格积累」三处耦合
 
 现场 01:29–01:33 轮实测（`[FIXEDCENTER_CONTROL]` 汇总）：来源切换 **711** 次、
@@ -9,19 +39,33 @@
 
 - **无机会 ≠ 模型失败**：固定中心求解失败时区分「选板失败」与「模型失效」。选板失败且快照仍在
   有效期内时，保留固定中心的来源标识与候选连续性（`takeover_reason=no_opportunity`），本帧
-  只是没有瞄准点、不许开火；云台仍用基线指令。真正失效（`trajectory` / `non_finite` / 快照过期）
-  才退回基线并计入 `predictor_solve_fallbacks`。无瞄准点帧沿用窗口已有的面与面偏航，
-  面跳变检查与 yaw 门在该帧不参与判决（发送侧另有 aim 门）。
+  只是没有瞄准点、不许开火；云台仍用基线指令。真正失效（`trajectory` / `non_finite` /
+  `not_converged` / 快照过期）才退回基线并计入 `predictor_solve_fallbacks`。无瞄准点帧沿用窗口
+  已有的面与面偏航，面跳变检查、yaw 门与 control 门在该帧不参与判决（发送侧另有 `aim` 门）。
+  **判据覆盖三种选板失败（`initial_selection` / `iterative_selection` / `final_selection`）**：
+  现场 214 条回退记录全部是 `final_selection`，只把前两种算作无机会等于没有修到问题；
+  214 条中有 66 条基线也没有有效指令，若不放开 control 门，这些帧仍会把候选窗口清零。
+- **模型归属只在真失效处终止**（`tasks/auto_aim/fixed_center_takeover.hpp`）：`disabled`、
+  `context_changed`（换目标/代际/速度档/旋向）、`stale_model`、`stale_observation`、
+  `clock_gap`、`fit_failed`、非法输入、快照过期才 `reset()`；`ineligible`、`no_observation`、
+  `coverage`、`motion_coverage`、`moving_center`、`holdout_error` 只关闭当帧资格并保留
+  `fits_/revision_/stable_since`，恢复时不必再付「3 次拟合 + 200 ms」。现场该轮
+  `settling` 139 条、`moving_center` 130 条、`ineligible` 62 条、`coverage` 14 条、
+  `holdout_error` 5 条记录，每一类都在重置历史。
 - **冷却不再阻断资格**：`cadence` 与新增的 `aim` 从候选资格集合移到发送集合
   （`fire_window.hpp` 的 `closed(qualification_only)`）。冷却期间照常逐帧积累确认，冷却结束当帧
   只要通过真实门控即可发送；确认仍绑定 `generation + face + geometry + prediction_source`，
   且新增「证据新鲜」约束：最近一次积累的图像时间超过 100 ms 即不再算成熟，避免把旧资格存到
   冷却后再用。串口发送、下位机控制、PnP 有效性、弹道收敛、观测新鲜度与发送前复检全部保留。
 
-验证：小电脑 Release 重新编译 `standard` 通过；`fire_window_test`（含新增的「冷却关闭时资格
-仍可积累、aim 关闭时禁止发送、证据过期不再成熟」断言）、`model_rebuild_test`、
-`aimer_prediction_test`、`tracker_reset_test` 全部通过。**尚未现场验证**，请求频率与来源
-切换次数待下一轮日志对照；命中率不作为这两处的验收指标。
+验证：`fire_window_test`（含新增的「冷却关闭时资格仍可积累、aim 关闭时禁止发送、证据过期不再
+成熟」断言）、`fixed_center_takeover_test`（56 项，含「瞬态失效保留质量历史、显式禁用才重置」）、
+`fixed_center_shadow_test`（31 项）、`face_prediction_residual_test`（126 项）在本地 MinGW 全部
+编译并通过。本轮前半（提交 `0c9cab3`）记录的「小电脑 Release 重编 `standard` 通过、`model_rebuild_test`
+/ `aimer_prediction_test` / `tracker_reset_test` 通过」在本地没有留下构建日志；2026-10-28 03:32 与
+03:44 两次实测小电脑 `192.168.137.215:22` 均不可达，本次**无法复现**，按未复核处理。
+`src/standard.cpp` 与 `fixed_center_takeover.hpp` 的补充改动同样**尚未编译**（只有头文件级测试可跑）。
+**尚未现场验证**：请求频率、来源切换次数与命中率待下一轮日志对照。
 
 ## 2026-10-28 凌晨：固定中心受控接管已部署，现场有效结果比例约 1/3，来源管理待修正
 

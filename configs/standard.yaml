@@ -1,4 +1,4 @@
-# 6500 rpm 四装甲“小陀螺”实弹复测配置；允许 shoot=1，仅在现场安全确认后使用。
+﻿# 6500 rpm 四装甲“小陀螺”实弹复测配置；允许 shoot=1，仅在现场安全确认后使用。
 # 2026-09-06 单因素修正：高速预测延迟增加 50 ms，使当前反转目标提前约 4°相位触发。
 # 2026-09-12 抬高靶复算：靶高已由视觉闭环吸收，撤销额外 0.60° 固定上抬。
 # 19.36 m/s 由 3200 rpm 实弹等效 9.53 m/s 按转速线性外推，须用实弹/测速仪复核。
@@ -314,7 +314,7 @@ xuc_gyro_require_event_lock_for_fire: false
 xuc_gyro_predicted_yaw_tolerance_deg: 3.0
 xuc_gyro_predicted_yaw_trim_deg: -1.0
 xuc_gyro_visibility_yaw_tolerance_deg: 8.0
-xuc_gyro_fire_min_consecutive_frames: 4
+xuc_gyro_fire_min_consecutive_frames: 3
 # No additional selection wait: issue when the current candidate reaches four frames.
 xuc_gyro_fire_selection_max_wait_ms: 0.0
 xuc_gyro_fire_selection_near_deg: 0.5

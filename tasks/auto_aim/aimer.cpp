@@ -35,9 +35,39 @@ void Aimer::set_delay_adjustment(double adjustment_s)
   delay_adjustment_time_ = std::clamp(adjustment_s, -0.050, 0.050);
 }
 
+AimPredictionModel Aimer::prediction_model(const Target & target, AimGeometry requested) const
+{
+  AimPredictionModel model;
+  const auto & raw = target.ekf().x;
+  const auto & covariance = target.ekf().P;
+  const bool raw_healthy = raw.size() == 11 && raw.allFinite() &&
+    covariance.rows() == 11 && covariance.cols() == 11 && covariance.allFinite() &&
+    raw[8] > 0.05 && raw[8] < 0.5 &&
+    raw[8] + raw[9] > 0.05 && raw[8] + raw[9] < 0.5;
+  // Resolve once at the image boundary. In particular, do not let YawESKF's
+  // rate decide the delay or trust gate for raw-EKF geometry.
+  if (requested == AimGeometry::whole_ekf && target.use_whole_ekf_geometry(decision_speed_)) {
+    model.geometry = AimGeometry::whole_ekf;
+    model.state = raw;
+  } else {
+    model.state = target.ekf_x();
+  }
+  model.finite = raw_healthy && model.state.size() == 11 && model.state.allFinite();
+  if (!model.finite) return model;
+  model.angular_velocity_rad_s = model.state[7];
+  // convergened() latches a flag, so query a copy instead of modifying Tracker.
+  auto target_copy = target;
+  // Geometry ownership does not replace the independent motion-health gate.
+  // Tracker convergence only counts updates and plausible radii; it does not
+  // establish that a newly acquired raw-EKF rotation estimate is trustworthy.
+  model.trusted = target_copy.convergened() && target.yaw_eskf_trusted();
+  return model;
+}
+
 io::Command Aimer::aim(
   std::list<Target> targets, std::chrono::steady_clock::time_point timestamp, double bullet_speed,
-  bool to_now, AimPredictionTrace * trace, AimGeometry geometry)
+  bool to_now, AimPredictionTrace * trace, AimGeometry geometry,
+  const FixedCenterAimModel * fixed_center)
 {
   if (trace) *trace = AimPredictionTrace{};
   debug_aim_point = {false, Eigen::Vector4d::Zero()};
@@ -49,24 +79,33 @@ io::Command Aimer::aim(
   if (targets.empty()) return fail(AimPredictionFailure::no_target);
   auto target = targets.front();
 
-  const auto & raw_state = target.ekf().x;
-  if (raw_state.size() != 11 || !raw_state.allFinite() || !target.ekf_x().allFinite())
-    return fail(AimPredictionFailure::non_finite);
-  // 在帧边界上一次性决定用哪套几何，所有弹道迭代共用同一个模型。
-  // 小陀螺（4 装甲、|ω| > decision_speed、主 EKF 状态健康）走主 EKF；
-  // 静止/低速/前哨站保留原来的 ekf_x() 路径。
-  // ⚠️ 判据必须用**主 EKF 自己的 ω**（raw_state[7]）。用 ekf_x()[7] 会被 YawESKF
-  // 覆盖，而它恰好在这个场景里会掉到 0.1~0.3 rad/s（实测开火瞬间 omega=+0.149，
-  // 而窗口平均速率是 +1.691），导致整车几何永远不生效（日志里 whole_ekf=false）。
-  const bool whole_ekf_geometry = geometry == AimGeometry::whole_ekf &&
-    target.armor_num() == 4 && target.name != ArmorName::outpost &&
-    raw_state.size() == 11 && raw_state.allFinite() &&
-    std::abs(raw_state[7]) > decision_speed_ &&
-    raw_state[8] > 0.05 && raw_state[8] < 0.5 &&
-    raw_state[8] + raw_state[9] > 0.05 && raw_state[8] + raw_state[9] < 0.5;
-  if (trace) trace->whole_ekf_geometry = whole_ekf_geometry;
+  const auto model = prediction_model(target, geometry);
+  if (!model.finite) return fail(AimPredictionFailure::non_finite);
+  const bool whole_ekf_geometry = model.geometry == AimGeometry::whole_ekf;
+  const auto image_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+    timestamp.time_since_epoch()).count();
+  const auto checked_ns = to_now ? std::chrono::duration_cast<std::chrono::nanoseconds>(
+    std::chrono::steady_clock::now().time_since_epoch()).count() : image_ns;
+  if (fixed_center && (!whole_ekf_geometry || target.armor_num() != 4 || !target.jumped ||
+      fixed_center->context.target_id != static_cast<int>(target.name) ||
+      !fixed_center->valid_at(checked_ns) || fixed_center->model.reference_ns > image_ns))
+    return fail(AimPredictionFailure::stale_model);
+  const double prediction_rate = fixed_center
+    ? fixed_center->model.state.omega_rad_s : model.angular_velocity_rad_s;
+  if (trace) {
+    trace->geometry = model.geometry;
+    trace->whole_ekf_geometry = whole_ekf_geometry;
+    trace->angular_velocity_rad_s = prediction_rate;
+    trace->fixed_center = fixed_center != nullptr;
+    if (fixed_center) {
+      trace->fixed_center_epoch = fixed_center->epoch;
+      trace->fixed_center_revision = fixed_center->revision;
+      trace->model_reference_ns = fixed_center->model.reference_ns;
+      trace->model_valid_until_ns = fixed_center->valid_until_ns;
+    }
+  }
   double delay_time =
-    (std::abs(target.ekf_x()[7]) > decision_speed_
+    (std::abs(prediction_rate) > decision_speed_
        ? high_speed_delay_time_
        : low_speed_delay_time_) + delay_adjustment_time_;
 
@@ -99,92 +138,138 @@ io::Command Aimer::aim(
 
   if (trace) trace->base_prediction_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
     future.time_since_epoch()).count();
-  auto aim_point0 = choose_aim_point(target, whole_ekf_geometry, trace ? &trace->face_id : nullptr);
-  debug_aim_point = aim_point0;
-  if (!aim_point0.valid) {
-    // tools::logger()->debug("Invalid aim_point0.");
-    return fail(AimPredictionFailure::initial_selection);
-  }
-  if (!aim_point0.xyza.allFinite()) return fail(AimPredictionFailure::non_finite);
-
-  Eigen::Vector3d xyz0 = aim_point0.xyza.head(3);
-  auto d0 = std::sqrt(xyz0[0] * xyz0[0] + xyz0[1] * xyz0[1]);
-  tools::Trajectory trajectory0(bullet_speed, d0, xyz0[2]);
-  if (trajectory0.unsolvable) {
-    tools::logger()->debug(
-      "[Aimer] Unsolvable trajectory0: {:.2f} {:.2f} {:.2f}", bullet_speed, d0, xyz0[2]);
-    debug_aim_point.valid = false;
-    return fail(AimPredictionFailure::trajectory);
-  }
-  if (!std::isfinite(trajectory0.fly_time) || !std::isfinite(trajectory0.pitch))
-    return fail(AimPredictionFailure::non_finite);
-
-  // 迭代求解飞行时间 (最多10次，收敛条件：相邻两次fly_time差 <0.001)
-  bool converged = false;
-  double prev_fly_time = trajectory0.fly_time;
-  tools::Trajectory current_traj = trajectory0;
-  std::vector<Target> iteration_target(10, target);  // 创建10个目标副本用于迭代预测
-
-  for (int iter = 0; iter < 10; ++iter) {
-    // 预测目标在 future + prev_fly_time 时刻的位置
-    auto predict_time = future + std::chrono::microseconds(static_cast<int>(prev_fly_time * 1e6));
-    iteration_target[iter].predict(predict_time);
-
-    // 计算瞄准点
-    auto aim_point = choose_aim_point(
-      iteration_target[iter], whole_ekf_geometry, trace ? &trace->face_id : nullptr);
-    if (trace) {
-      trace->prediction_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+  // For high-speed whole-body prediction each solve owns one physical face.
+  // An invisible face at the base time may become selectable by impact time.
+  const bool fixed_faces = fixed_center || (whole_ekf_geometry && target.jumped);
+  struct Candidate
+  {
+    AimPredictionTrace trace;
+    AimPoint point{false, Eigen::Vector4d::Zero()};
+    double pitch = 0.0;
+    AimPredictionFailure failure = AimPredictionFailure::none;
+  };
+  const auto solve = [&](int fixed_id) {
+    Candidate result;
+    if (trace) result.trace = *trace;
+    result.trace.fixed_face = fixed_id >= 0;
+    const auto point_at = [&](const Target & predicted, std::int64_t time_ns) -> AimPoint {
+      if (fixed_center) {
+        const auto face = fixed_center->face_at(time_ns, fixed_id);
+        result.trace.face_id = fixed_id;
+        return {true, Eigen::Vector4d(face[0], face[1], face[2], face[3])};
+      }
+      if (fixed_id < 0)
+        return choose_aim_point(predicted, whole_ekf_geometry, &result.trace.face_id);
+      const auto faces = predicted.whole_ekf_armor_xyza_list();
+      if (fixed_id >= static_cast<int>(faces.size()))
+        return {false, Eigen::Vector4d::Zero()};
+      result.trace.face_id = fixed_id;
+      return {true, faces[fixed_id]};
+    };
+    result.point = point_at(target, std::chrono::duration_cast<std::chrono::nanoseconds>(
+      future.time_since_epoch()).count());
+    if (!result.point.valid) {
+      result.failure = AimPredictionFailure::initial_selection;
+      return result;
+    }
+    const auto trajectory_at = [&](const AimPoint & point, double & flight, double & pitch) {
+      if (!point.xyza.allFinite()) return AimPredictionFailure::non_finite;
+      tools::Trajectory trajectory(
+        bullet_speed, point.xyza.head<2>().norm(), point.xyza[2]);
+      if (trajectory.unsolvable) return AimPredictionFailure::trajectory;
+      if (!std::isfinite(trajectory.fly_time) || !std::isfinite(trajectory.pitch) ||
+          trajectory.fly_time < 0.0) return AimPredictionFailure::non_finite;
+      flight = trajectory.fly_time;
+      pitch = trajectory.pitch;
+      return AimPredictionFailure::none;
+    };
+    double previous_flight = 0.0;
+    result.failure = trajectory_at(result.point, previous_flight, result.pitch);
+    if (result.failure != AimPredictionFailure::none) return result;
+    for (int iter = 0; iter < 10; ++iter) {
+      const auto predict_time = future + std::chrono::duration_cast<std::chrono::steady_clock::duration>(
+        std::chrono::duration<double>(previous_flight));
+      auto predicted = target;
+      predicted.predict(predict_time);
+      result.trace.prediction_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
         predict_time.time_since_epoch()).count();
-      trace->flight_time_used_s = prev_fly_time;
-      trace->iterations = iter + 1;
+      result.point = point_at(predicted, result.trace.prediction_ns);
+      result.trace.flight_time_used_s = previous_flight;
+      result.trace.iterations = iter + 1;
+      result.trace.aim_xyza = result.point.xyza;
+      if (!result.point.valid) {
+        result.failure = AimPredictionFailure::iterative_selection;
+        return result;
+      }
+      double next_flight = 0.0;
+      result.failure = trajectory_at(result.point, next_flight, result.pitch);
+      if (result.failure != AimPredictionFailure::none) return result;
+      result.trace.flight_time_s = next_flight;
+      if (std::abs(next_flight - previous_flight) < 0.001) {
+        result.trace.converged = true;
+        auto selection_state = predicted.ekf().x;
+        if (fixed_center) {
+          selection_state[0] = fixed_center->model.state.center_x;
+          selection_state[2] = fixed_center->model.state.center_y;
+          selection_state[7] = fixed_center->model.state.omega_rad_s;
+        }
+        if (fixed_id >= 0 &&
+            !rotation_face_selectable(predicted, selection_state, result.point.xyza))
+          result.failure = AimPredictionFailure::final_selection;
+        return result;
+      }
+      previous_flight = next_flight;
     }
-    debug_aim_point = aim_point;
-    if (!aim_point.valid) {
-      return fail(AimPredictionFailure::iterative_selection);
-    }
-    if (!aim_point.xyza.allFinite()) return fail(AimPredictionFailure::non_finite);
+    result.failure = AimPredictionFailure::not_converged;
+    return result;
+  };
 
-    // 计算新弹道
-    Eigen::Vector3d xyz = aim_point.xyza.head(3);
-    double d = std::sqrt(xyz.x() * xyz.x() + xyz.y() * xyz.y());
-    current_traj = tools::Trajectory(bullet_speed, d, xyz.z());
-
-    // 检查弹道是否可解
-    if (current_traj.unsolvable) {
-      tools::logger()->debug(
-        "[Aimer] Unsolvable trajectory in iter {}: speed={:.2f}, d={:.2f}, z={:.2f}", iter + 1,
-        bullet_speed, d, xyz.z());
-      debug_aim_point.valid = false;
-      return fail(AimPredictionFailure::trajectory);
+  Candidate selected;
+  if (fixed_faces) {
+    std::optional<Candidate> unconverged, final_ineligible;
+    for (int face = 0; face < target.armor_num(); ++face) {
+      auto candidate = solve(face);
+      if (candidate.failure == AimPredictionFailure::not_converged && !unconverged)
+        unconverged = candidate;
+      if (candidate.failure == AimPredictionFailure::final_selection && !final_ineligible)
+        final_ineligible = candidate;
+      selected = std::move(candidate);
+      if (selected.failure == AimPredictionFailure::none) break;
     }
-    if (!std::isfinite(current_traj.fly_time) || !std::isfinite(current_traj.pitch))
-      return fail(AimPredictionFailure::non_finite);
-
-    // 检查收敛条件
-    if (std::abs(current_traj.fly_time - prev_fly_time) < 0.001) {
-      converged = true;
-      break;
+    if (selected.failure != AimPredictionFailure::none) {
+      // Keep diagnostics from a candidate that actually has the reported
+      // failure. An unconverged face cannot be ruled out by final selection.
+      if (unconverged) selected = std::move(*unconverged);
+      else if (final_ineligible) selected = std::move(*final_ineligible);
+      if (trace) *trace = selected.trace;
+      return fail(selected.failure);
     }
-    prev_fly_time = current_traj.fly_time;
+  } else {
+    selected = solve(-1);
+    if (trace) *trace = selected.trace;
+    if (selected.failure != AimPredictionFailure::none) return fail(selected.failure);
   }
+  debug_aim_point = selected.point;
+  if (trace) *trace = selected.trace;
 
-  // 计算最终角度
   Eigen::Vector3d final_xyz = debug_aim_point.xyza.head(3);
+  if (fixed_center && to_now && !fixed_center->valid_at(
+      std::chrono::duration_cast<std::chrono::nanoseconds>(
+        std::chrono::steady_clock::now().time_since_epoch()).count()))
+    return fail(AimPredictionFailure::stale_model);
   double yaw = std::atan2(final_xyz.y(), final_xyz.x()) + yaw_offset_;
-  double pitch = -(current_traj.pitch + pitch_offset_);  //世界坐标系下pitch向上为负
+  double pitch = -(selected.pitch + pitch_offset_);  //世界坐标系下pitch向上为负
   if (!std::isfinite(yaw) || !std::isfinite(pitch)) return fail(AimPredictionFailure::non_finite);
   if (trace) {
     trace->valid = std::isfinite(yaw) && std::isfinite(pitch);
-    trace->converged = converged;
-    trace->flight_time_s = current_traj.fly_time;
   }
   return {true, false, yaw, pitch};
 }
 
 io::Command Aimer::aim(
   std::list<Target> targets, std::chrono::steady_clock::time_point timestamp, double bullet_speed,
-  io::ShootMode shoot_mode, bool to_now, AimPredictionTrace * trace, AimGeometry geometry)
+  io::ShootMode shoot_mode, bool to_now, AimPredictionTrace * trace, AimGeometry geometry,
+  const FixedCenterAimModel * fixed_center)
 {
   double yaw_offset;
   if (shoot_mode == io::left_shoot && left_yaw_offset_.has_value()) {
@@ -195,7 +280,7 @@ io::Command Aimer::aim(
     yaw_offset = yaw_offset_;
   }
 
-  auto command = aim(targets, timestamp, bullet_speed, to_now, trace, geometry);
+  auto command = aim(targets, timestamp, bullet_speed, to_now, trace, geometry, fixed_center);
   command.yaw = command.yaw - yaw_offset_ + yaw_offset;
   if (!std::isfinite(command.yaw) || !std::isfinite(command.pitch)) {
     if (trace) { trace->valid = false; trace->failure = AimPredictionFailure::non_finite; }
@@ -275,26 +360,27 @@ AimPoint Aimer::choose_aim_point(
     return select(true, id_list[0]);
   }
 
-  double coming_angle, leaving_angle;
-  if (target.name == ArmorName::outpost) {
-    coming_angle = 70 / 57.3;
-    leaving_angle = 30 / 57.3;
-  } else {
-    coming_angle = comming_angle_;
-    leaving_angle = leaving_angle_;
-  }
-
   // 小陀螺时选板（2026-10-19 借鉴 Fujian_AutoAim 26.10.18）：
   // 一侧的装甲板不断出现、另一侧不断消失，前者被打中的概率更高。
   // 所以按 ω 的符号挑"正在进入视野"的那块，而不是挑 delta_angle 最接近 0 的。
   // choose_aim_point 的 target 已预测到弹着时刻，delta_angle 就是弹着时刻的角度。
   for (int i = 0; i < armor_num; i++) {
-    if (std::abs(delta_angle_list[i]) > coming_angle) continue;
-    if (ekf_x[7] > 0 && delta_angle_list[i] < leaving_angle) return select(true, i);
-    if (ekf_x[7] < 0 && delta_angle_list[i] > -leaving_angle) return select(true, i);
+    if (rotation_face_selectable(target, ekf_x, armor_xyza_list[i]))
+      return select(true, i);
   }
 
   return select(false, 0);
+}
+
+bool Aimer::rotation_face_selectable(
+  const Target & target, const Eigen::VectorXd & state, const Eigen::Vector4d & face) const
+{
+  if (state.size() != 11 || !state.allFinite() || !face.allFinite()) return false;
+  const double coming = target.name == ArmorName::outpost ? 70.0 / 57.3 : comming_angle_;
+  const double leaving = target.name == ArmorName::outpost ? 30.0 / 57.3 : leaving_angle_;
+  const double delta = tools::limit_rad(face[3] - std::atan2(state[2], state[0]));
+  return std::abs(delta) <= coming &&
+    ((state[7] > 0.0 && delta < leaving) || (state[7] < 0.0 && delta > -leaving));
 }
 
 }  // namespace auto_aim
