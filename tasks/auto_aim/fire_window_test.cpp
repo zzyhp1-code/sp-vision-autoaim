@@ -124,6 +124,7 @@ void test_temporary_loss()
   physical.cadence = physical.yaw = physical.visibility = physical.pitch = true;
   physical.aim = true;
   physical.alignment = true;
+  physical.armor_jump = true;
   physical.one_face = physical.phase = physical.timing = true;
   const auto gates = [&](FireClock::time_point now, bool gap, bool inhibit = false,
                          std::uint64_t generation = 1, int face = 2, bool geometry = true) {
@@ -201,20 +202,19 @@ void test_temporary_loss()
   // Cooldown and "aim exists right now" gate the SEND only. Qualification must
   // keep accumulating through a cooldown, and an absent plate must not silently
   // bank qualification that is then reused for a shot.
-  for (const char * gate : {"cadence", "aim", "alignment"}) {
-    const bool is_cadence = std::string(gate) == "cadence";
-    const bool is_alignment = std::string(gate) == "alignment";
-    if (is_cadence) physical.cadence = false;
-    else if (is_alignment) physical.alignment = false;
-    else physical.aim = false;
+  for (const char * gate : {"cadence", "aim", "alignment", "armor_jump"}) {
+    const std::string name(gate);
+    auto & flag = name == "cadence" ? physical.cadence
+                : name == "aim" ? physical.aim
+                : name == "alignment" ? physical.alignment
+                : physical.armor_jump;
+    flag = false;
     const auto g = gates(last_image, true);
     const auto reasons = g.closed();
     assert(!g.request_allowed());
     assert(g.candidate_allowed(true));
-    assert(reasons.find(gate) != std::string::npos);
-    if (is_cadence) physical.cadence = true;
-    else if (is_alignment) physical.alignment = true;
-    else physical.aim = true;
+    assert(reasons.find(name) != std::string::npos);
+    flag = true;
   }
   // Qualification cannot be banked across a stall in its own evidence either.
   assert(gates(last_image + milliseconds(150), true).mature == false);

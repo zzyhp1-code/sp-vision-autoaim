@@ -315,6 +315,11 @@ xuc_gyro_predicted_yaw_tolerance_deg: 3.0
 # 真正的命中窗口：弹到瞬间最近装甲板中心与炮口线的夹角上限（度）。
 # 板半角约 atan(6.75cm/距离)，3.45 m 处约 1.1°；0 = 关闭，恢复旧行为。
 xuc_fire_impact_alignment_deg: 1.0
+# 换板抑制：本发预测瞄准点与上一发相比位移超过该值即判为换板（米）。0=关闭。
+# 换板瞬间追逐新板是"第一发中、第二发追着同一块板跑空"的来源，宁可不发。
+xuc_fire_armor_jump_distance_m: 0.20
+# 判为换板后的禁火时长（毫秒），避开交接瞬间。
+xuc_fire_armor_jump_hold_ms: 100.0
 xuc_gyro_predicted_yaw_trim_deg: -1.0
 xuc_gyro_visibility_yaw_tolerance_deg: 8.0
 xuc_gyro_fire_min_consecutive_frames: 3

@@ -122,6 +122,9 @@ struct FireRequestGates
   // Send-only for the same reason: rejecting a bad arrival must not cost the
   // accumulated confirmation, only the shot.
   bool alignment = false;
+  // Did the aim point jump onto a different plate since the last sent request?
+  // Send-only, same rationale: a handover is a bad moment, not a bad model.
+  bool armor_jump = false;
 
   std::string closed(bool qualification_only = false) const
   {
@@ -141,6 +144,7 @@ struct FireRequestGates
       // Keeping cadence in the qualification set made a 750 ms cooldown also
       // stop frame confirmation, so every shot paid cooldown + maturity again.
       add(cadence, "cadence"); add(aim, "aim"); add(alignment, "alignment");
+      add(armor_jump, "armor_jump");
       add(mature, "mature"); add(unsent, "unsent"); add(timing, "timing");
     }
     return out;

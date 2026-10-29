@@ -509,6 +509,18 @@ int main(int argc, char * argv[])
        ? std::clamp(
            integration_yaml["xuc_fire_impact_alignment_deg"].as<double>(), 0.0, 10.0)
        : 0.0) * M_PI / 180.0;
+  // Plate-handover suppression. If this request's predicted aim point sits far
+  // from the previous request's, the model swung onto a different plate between
+  // two shots - the classic "first round hits, second trails behind the same
+  // plate" failure. Hold fire briefly instead of chasing the jump. 0 disables.
+  const double xuc_fire_armor_jump_distance_m =
+    integration_yaml["xuc_fire_armor_jump_distance_m"]
+      ? std::clamp(integration_yaml["xuc_fire_armor_jump_distance_m"].as<double>(), 0.0, 2.0)
+      : 0.20;
+  const double xuc_fire_armor_jump_hold_s =
+    integration_yaml["xuc_fire_armor_jump_hold_ms"]
+      ? std::clamp(integration_yaml["xuc_fire_armor_jump_hold_ms"].as<double>(), 0.0, 1000.0) / 1000.0
+      : 0.10;
   const double xuc_gyro_visibility_yaw_tolerance_rad =
     (integration_yaml["xuc_gyro_visibility_yaw_tolerance_deg"]
        ? std::clamp(
@@ -1010,6 +1022,11 @@ int main(int argc, char * argv[])
   auto & xuc_fire_candidate_face_yaw_rad = fire_candidate_window.face_yaw_rad;
   auto & xuc_fire_candidate_since = fire_candidate_window.since;
   auto_aim::FireWindowSelector xuc_fire_window_selector;
+  // Predicted aim point of the previous SENT request, used to detect a plate
+  // handover between two shots. Cleared on target/model loss or a long gap.
+  Eigen::Vector3d xuc_last_sent_aim_xyz = Eigen::Vector3d::Zero();
+  bool xuc_last_sent_aim_valid = false;
+  auto_aim::FireClock::time_point xuc_last_sent_aim_time{};
   bool tracker_fire_gate_was_open = true;
   bool xuc_one_face_armed = true;
   bool xuc_gyro_center_follow_logged = false;
@@ -2498,10 +2515,17 @@ int main(int argc, char * argv[])
       fire_candidate_window.reset();
       xuc_fire_window_selector.reset();
     }
-    if (targets.empty() || !model_rebuild.fire_allowed()) fire_candidate_window.reset();
+    if (targets.empty() || !model_rebuild.fire_allowed()) {
+      fire_candidate_window.reset();
+      // Losing the target or the model invalidates the handover baseline: the
+      // next acquisition is a fresh track, not a jump from the old plate.
+      xuc_last_sent_aim_valid = false;
+    }
     auto_aim::FireRequestGates frame_fire_gates;
     bool fire_predictive_route = false;
     bool fire_timing_ready = false;
+    bool fire_armor_jump = false;
+    double fire_armor_jump_distance_m = NAN;
     double fire_impact_alignment_rad = NAN;
     double fire_actual_predicted_yaw_error_rad = NAN;
     double fire_model_visibility_error_rad = NAN;
@@ -2640,7 +2664,7 @@ int main(int argc, char * argv[])
           "pred_failure={} pred_yaw_error_deg={:+.3f} measured_yaw_error_deg={:+.3f} "
           "model_visibility_error_deg={:+.3f} measured_pitch_error_deg={:+.3f} "
           "held_pitch_error_deg={:+.3f} yaw_fresh={} pitch_fresh={} "
-          "impact_alignment_deg={:+.3f} closed=[{}] blocked_frames={}",
+          "impact_alignment_deg={:+.3f} armor_jump_m={:.3f} closed=[{}] blocked_frames={}",
           source, tracker.state(), fire_observation_clock.age_ms(now), tracker.model_generation(),
           fire_candidate_window.generation, candidate_face_id, fire_candidate_window.face,
           fire_candidate_window.frames, fire_candidate_window.sent, failure,
@@ -2650,7 +2674,7 @@ int main(int argc, char * argv[])
           direct_pitch_pixel_error_rad * 180.0 / M_PI,
           (command.pitch - xuc.imu_pitch()) * 180.0 / M_PI,
           direct_yaw_measurement_fresh, direct_pitch_measurement_fresh,
-          fire_impact_alignment_rad * 180.0 / M_PI, closed,
+          fire_impact_alignment_rad * 180.0 / M_PI, fire_armor_jump_distance_m, closed,
           fire_gate_blocked_frames);
         fire_gate_last_state = state;
         fire_gate_last_log = now;
@@ -3069,6 +3093,30 @@ int main(int argc, char * argv[])
       frame_fire_gates.alignment = !(xuc_fire_impact_alignment_rad > 0.0) ||
         (std::isfinite(fire_impact_alignment_rad) &&
          fire_impact_alignment_rad <= xuc_fire_impact_alignment_rad);
+      // Plate-handover suppression: compare this frame's predicted aim point with
+      // the point the PREVIOUS SENT request predicted. A large jump means the
+      // model swung onto another plate between shots, where the follow-up round
+      // is the one that trails behind. Hold fire for a short window instead.
+      if (xuc_fire_armor_jump_distance_m > 0.0 && xuc_last_sent_aim_valid &&
+          native_fire_prediction.valid && native_fire_prediction.prediction_ns > 0 &&
+          !targets.empty()) {
+        auto jump_target = targets.front();
+        jump_target.predict(std::chrono::steady_clock::time_point(
+          std::chrono::nanoseconds(native_fire_prediction.prediction_ns)));
+        const auto jump_faces = native_fire_prediction.whole_ekf_geometry
+          ? jump_target.whole_ekf_armor_xyza_list() : jump_target.armor_xyza_list();
+        const int jump_face = native_fire_prediction.face_id;
+        if (jump_face >= 0 && jump_face < static_cast<int>(jump_faces.size()) &&
+            jump_faces[jump_face].allFinite()) {
+          fire_armor_jump_distance_m =
+            (jump_faces[jump_face].head<3>() - xuc_last_sent_aim_xyz).norm();
+          const bool moved = fire_armor_jump_distance_m > xuc_fire_armor_jump_distance_m;
+          const auto since_last = std::chrono::steady_clock::now() - xuc_last_sent_aim_time;
+          fire_armor_jump = moved && since_last < std::chrono::duration<double>(
+            xuc_fire_armor_jump_hold_s);
+        }
+      }
+      frame_fire_gates.armor_jump = !fire_armor_jump;
       const auto qualification_gates = evaluate_fire_gates(std::chrono::steady_clock::now());
       const bool fire_context_valid = qualification_gates.target && qualification_gates.tracker &&
         qualification_gates.observation && qualification_gates.model && qualification_gates.prediction &&
@@ -3780,6 +3828,13 @@ int main(int argc, char * argv[])
         xuc_pending_shot = true;
         xuc_pending_shot_id = shot_id;
         xuc_pending_shot_time = issue_time;
+        // Remember what this accepted request aimed at, so the next one can be
+        // checked for a plate handover.
+        if (aimer.debug_aim_point.valid) {
+          xuc_last_sent_aim_xyz = aimer.debug_aim_point.xyza.head<3>();
+          xuc_last_sent_aim_valid = true;
+          xuc_last_sent_aim_time = issue_time;
+        }
         // 武装开火脉冲保持：本发 shoot 将维持到该时刻
         if (xuc_shoot_hold_s > 0.0) {
           xuc_shoot_pulse_until = issue_time + std::chrono::milliseconds(
