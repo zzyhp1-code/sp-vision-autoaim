@@ -67,7 +67,7 @@ detector_debug: false
 use_traditional: true
 # YOLO26 之前会忽略 use_traditional。自适应双灯条细化器现在将其作为默认启用开关；
 # 如果找不到几何上相符的图像候选，就安全地保留网络输出的角点。
-yolo26_refine_corners: false
+yolo26_refine_corners: true
 corner_refine_roi_length_scale: 1.8
 corner_refine_roi_width_scale: 0.9
 corner_refine_max_center_error_ratio: 0.65
@@ -186,7 +186,7 @@ vid_pid: "2bdf:0001"
 
 debug: false
 # 现场调参时保留投影画面；正式压力测试可改回 true 以减少显示开销。
-competition_headless: true   # 关显示：imshow+waitKey+绘图每帧约 11 ms，是当前帧率瓶颈之一
+competition_headless: true   # 关显示：每帧约 11ms，60fps 必需
 # PlotJuggler 每帧序列化 37 字段并 UDP 发送，无监听时纯属浪费。现场关闭。
 plotter_streaming_enabled: false
 

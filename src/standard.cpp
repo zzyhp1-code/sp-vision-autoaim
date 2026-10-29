@@ -3501,11 +3501,20 @@ int main(int argc, char * argv[])
         tracker_converged &&
         (!gyro_model_fresh || std::abs(gyro_omega_rad_s) <
           xuc_gyro_omega_threshold_rad_s);
+      // The integrator must be able to learn the steady gimbal offset while the
+      // target spins. During gyro motion the raw error also contains the whole
+      // prediction lead (~40 deg at 4.4 rad/s), so the integrate_error_limit gate
+      // rejects every sample and the PI never accumulates anything. Allow the
+      // integral path on a fresh, converged association regardless of omega and
+      // size its gate from output_limit, so the correction stays bounded by the
+      // configured output limit instead of being silently disabled.
+      const bool yaw_pi_learn_allowed = direct_yaw_measurement_fresh &&
+        tracker_converged && std::isfinite(yaw_tracking_error_raw_rad);
+      const double yaw_pi_error_gate_rad =
+        std::max(yaw_tracking_integrate_error_limit_rad, yaw_tracking_output_limit_rad);
       if (armed_age_s >= yaw_tracking_arm_dwell_s &&
-          low_dynamic_measurement &&
-          std::isfinite(yaw_tracking_error_raw_rad) &&
-          std::abs(yaw_tracking_error_raw_rad) <=
-            yaw_tracking_integrate_error_limit_rad) {
+          yaw_pi_learn_allowed &&
+          std::abs(yaw_tracking_error_raw_rad) <= yaw_pi_error_gate_rad) {
         yaw_tracking_integral_raw_rad = std::clamp(
           yaw_tracking_integral_raw_rad +
             yaw_tracking_ki_per_s * yaw_tracking_error_raw_rad * dt,
