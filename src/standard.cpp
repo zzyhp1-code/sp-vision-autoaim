@@ -1407,9 +1407,13 @@ int main(int argc, char * argv[])
       model_rebuild_started = t;
     }
     auto targets = tracker.track(armors, t);
-    const bool was_waiting_for_model = model_rebuild.waiting_for_trust();
     if (model_rebuild.observe_model(tracker.model_generation()) && model_rebuild.enabled()) {
-      if (!was_waiting_for_model) model_rebuild_started = t;
+      // Always stamp the acquisition instant. The previous code only stamped it
+      // when the counter was not already waiting, which is always false for the
+      // first generation (the constructor already arms waiting_for_trust), so
+      // model_rebuild_started stayed at the default time_point and "ready"
+      // reported an elapsed_ms of ~3.9 hours in the field log.
+      model_rebuild_started = t;
       tools::logger()->info(
         "[MODELREBUILD] acquired model_generation={} sent_requests=0 tracker={} waiting_for_trust=true",
         tracker.model_generation(), tracker.state());

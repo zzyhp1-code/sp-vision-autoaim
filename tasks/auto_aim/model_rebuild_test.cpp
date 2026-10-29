@@ -95,13 +95,18 @@ void test_settle_window()
   assert(restarted.update_trust(true, true, true, 1500 * ms));
   assert(restarted.fire_allowed());
 
-  // A new generation forces a fresh settle even when the old one had settled.
+  // Generation 2 onwards must NOT wait: only the first model of a run carries
+  // the steady bias. Holding every generation deadlocked the field run, where
+  // trust flickered after a planned rebuild and 85 s passed with no shot.
   assert(restarted.observe_model(2));
+  // A rebuild still re-arms the ordinary trust handshake ...
   assert(!restarted.fire_allowed());
-  assert(!restarted.update_trust(true, true, true, 1600 * ms));
-  assert(!restarted.fire_allowed());
+  // ... but that handshake completes in one step, with no settle window.
+  assert(restarted.update_trust(true, true, true, 1600 * ms));
+  assert(restarted.fire_allowed() && !restarted.settling());
 
-  // A full estimator reset (planned rebuild) also re-arms the window.
+  // A planned rebuild of the FIRST model still re-arms the settle window, since
+  // that is the only generation the window protects.
   auto_aim::ModelRebuildCounter after_reset(25, 2000.0);
   after_reset.observe_model(1);
   assert(!after_reset.update_trust(true, true, true, 0));
@@ -109,6 +114,17 @@ void test_settle_window()
   assert(after_reset.fire_allowed());
   after_reset.reset_started();
   assert(!after_reset.fire_allowed());
+  // Re-acquiring the same first generation re-arms the window, not just the
+  // handshake: generation stayed 1, so settle still applies.
+  assert(!after_reset.observe_model(1));  // Same generation: no change.
+  assert(!after_reset.fire_allowed());
+  assert(!after_reset.update_trust(true, true, true, 3000 * ms));
+  assert(after_reset.update_trust(true, true, true, 5000 * ms));
+  assert(after_reset.fire_allowed());
+  // Bumping to generation 2 drops the window for good.
+  assert(after_reset.observe_model(2));
+  assert(after_reset.update_trust(true, true, true, 5100 * ms));
+  assert(after_reset.fire_allowed());
 
   // settle_ms = 0 keeps the historical behaviour: with neither rebuild nor
   // settle configured the counter is inert, so fire is allowed immediately and

@@ -11,10 +11,15 @@ namespace auto_aim
 class ModelRebuildCounter
 {
 public:
-  // settle_ms: after the estimator first looks trusted, keep refusing requests
-  // for this long. Field logs showed the first generation of a run sitting on a
-  // steady ~6.4 deg yaw bias (equivalent to ~26 ms of lead) while still passing
-  // tracking+converged+yaw_trusted, so trust alone is not stable enough.
+  // settle_ms: after the first estimator of a run looks trusted, keep refusing
+  // requests for this long. Field logs showed generation 1 sitting on a steady
+  // ~6.4 deg yaw bias (7 of its 24 requests) while still passing
+  // tracking+converged+yaw_trusted, so trust alone is not stable for that first
+  // model. Applying the window to EVERY generation deadlocked the field run:
+  // after a planned rebuild the trust signals flickered, each flicker restarted
+  // the window, generations advanced 3..13 and nothing fired for 85 s. The
+  // window therefore covers generation 1 only; later generations have already
+  // seen 25 accepted requests and are trusted by default.
   explicit ModelRebuildCounter(int after_requests, double settle_ms = 0.0)
   : after_requests_(std::max(0, after_requests)),
     settle_ns_(static_cast<std::int64_t>(std::max(0.0, settle_ms) * 1e6)),
@@ -43,15 +48,23 @@ public:
   // now_ns is a steady-clock timestamp in nanoseconds.
   bool update_trust(bool tracking, bool converged, bool yaw_trusted, std::int64_t now_ns = 0)
   {
+    // The settle window never applies past the first generation of the run.
+    const bool settle_this_generation = settle_ns_ > 0 && generation_ <= 1;
     if (waiting_for_trust_) {
       if (!tracking || !converged || !yaw_trusted) return false;
       waiting_for_trust_ = false;
       trusted_since_ns_ = now_ns;
-      if (settle_ns_ <= 0) return true;   // no settling window requested
+      if (!settle_this_generation) return true;   // no settling window requested
       settling_ = true;
       return false;
     }
     if (settling_) {
+      if (!settle_this_generation) {
+        // A later generation took over; release immediately instead of holding
+        // the gate on a window that no longer applies.
+        settling_ = false;
+        return false;
+      }
       // Any loss of trust restarts the settle window; it only ends on a full
       // settle_ns of uninterrupted trust.
       if (!tracking || !converged || !yaw_trusted) {
