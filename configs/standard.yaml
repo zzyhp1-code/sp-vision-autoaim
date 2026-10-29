@@ -49,7 +49,7 @@ min_confidence: 0.10
 min_keypoint_confidence: 0.0
 letterbox_value: 114
 yolo26_swap_rb: false
-yolo26_refine_color: true
+yolo26_refine_color: false
 # 仅当颜色、关键点和四边形几何信息彼此一致时，才接受低置信度候选目标。
 # 红蓝两种颜色使用对称的判定条件。
 yolo26_candidate_confidence: 0.04
@@ -67,7 +67,7 @@ detector_debug: false
 use_traditional: true
 # YOLO26 之前会忽略 use_traditional。自适应双灯条细化器现在将其作为默认启用开关；
 # 如果找不到几何上相符的图像候选，就安全地保留网络输出的角点。
-yolo26_refine_corners: true
+yolo26_refine_corners: false
 corner_refine_roi_length_scale: 1.8
 corner_refine_roi_width_scale: 0.9
 corner_refine_max_center_error_ratio: 0.65
@@ -152,8 +152,8 @@ decision_speed: 0.8
 # 的耗时——弹丸在拨弹轮转到中途时就被摩擦轮咬住甩出，出膛明显早于步进到位。
 # 因此 0.2 这个量级是对的，不要再按「步进耗时」去推算延时。
 # 现场原始值：0.2（单发改造后；早期为 0.085 → 0.1 → 0.195/0.205）。
-high_speed_delay_time: 0.170
-low_speed_delay_time: 0.165
+high_speed_delay_time: 0.176
+low_speed_delay_time: 0.171
 
 actuation_delay_ms: 0
 
@@ -186,7 +186,9 @@ vid_pid: "2bdf:0001"
 
 debug: false
 # 现场调参时保留投影画面；正式压力测试可改回 true 以减少显示开销。
-competition_headless: false
+competition_headless: true   # 关显示：imshow+waitKey+绘图每帧约 11 ms，是当前帧率瓶颈之一
+# PlotJuggler 每帧序列化 37 字段并 UDP 发送，无监听时纯属浪费。现场关闭。
+plotter_streaming_enabled: false
 
 # 相机硬触发（与电控 CAN 命令同步触发曝光）
 trigger_enable: false
@@ -317,7 +319,7 @@ xuc_gyro_predicted_yaw_tolerance_deg: 3.0
 xuc_fire_impact_alignment_deg: 1.0
 # 换板抑制：本发预测瞄准点与上一发相比位移超过该值即判为换板（米）。0=关闭。
 # 换板瞬间追逐新板是"第一发中、第二发追着同一块板跑空"的来源，宁可不发。
-xuc_fire_armor_jump_distance_m: 0.20
+xuc_fire_armor_jump_distance_m: 0.0   # 帧间基准实现有误，暂时关闭
 # 判为换板后的禁火时长（毫秒），避开交接瞬间。
 xuc_fire_armor_jump_hold_ms: 100.0
 xuc_gyro_predicted_yaw_trim_deg: -1.0
@@ -352,7 +354,10 @@ xuc_gyro_post_feed_recovery_ms: 0
 xuc_fire_cadence_fallback_ms: 1100
 # 每个模型累计成功发送15次请求后完整重建；0关闭。计的是请求，不是实测出膛数。
 # 重建期间禁火，待tracking与滤波可信后恢复；保留上次请求时刻并重新检查当前资格。
-xuc_model_rebuild_after_requests: 15
+xuc_model_rebuild_after_requests: 25
+# 模型刚建立时虽已 tracking+converged+yaw_trusted，仍带约 6.4° 稳态偏差
+# （现场 gen=1 的 7/24 发实测）。信任需连续保持该时长才允许请求；0=关闭。
+xuc_model_settle_ms: 3000.0
 # 开火脉冲保持时长（毫秒）。0 = 关闭（单帧脉冲，原行为）。
 # >0 时，开火上升沿后把 shoot 维持该时长，使下位机 AUTO 档（速度模式）拨弹轮
 # 获得确定性转动时间。实测单帧约 10ms 不足，一颗弹常需 3~4 次脉冲才能推入入口。

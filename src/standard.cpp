@@ -90,6 +90,14 @@ int main(int argc, char * argv[])
   const bool competition_headless =
     integration_yaml["competition_headless"] &&
     integration_yaml["competition_headless"].as<bool>();
+  // PlotJuggler streaming is a per-frame JSON serialisation + UDP send. It used
+  // to run even with the display off, so it stayed in the frame budget of every
+  // field run. Default off; enable only when something is actually listening.
+  const bool plotter_streaming_enabled =
+    integration_yaml["plotter_streaming_enabled"] &&
+    integration_yaml["plotter_streaming_enabled"].as<bool>();
+  plotter.set_enabled(plotter_streaming_enabled);
+  tools::logger()->info("[Performance] plotter_streaming={}", plotter_streaming_enabled);
   const bool direct_yaw_guard_enabled =
     integration_yaml["xuc_direct_yaw_guard"] &&
     integration_yaml["xuc_direct_yaw_guard"].as<bool>();
@@ -338,6 +346,11 @@ int main(int argc, char * argv[])
   const int xuc_model_rebuild_after_requests = integration_yaml["xuc_model_rebuild_after_requests"]
     ? std::clamp(integration_yaml["xuc_model_rebuild_after_requests"].as<int>(), 0, 100000)
     : 0;
+  // A fresh estimator can pass tracking+converged+yaw_trusted while still
+  // carrying a steady yaw bias. Hold requests until trust has lasted this long.
+  const double xuc_model_settle_ms = integration_yaml["xuc_model_settle_ms"]
+    ? std::clamp(integration_yaml["xuc_model_settle_ms"].as<double>(), 0.0, 10000.0)
+    : 0.0;
   const double xuc_fire_temp_lost_max_age_ms = integration_yaml["xuc_fire_temp_lost_max_age_ms"]
     ? std::clamp(integration_yaml["xuc_fire_temp_lost_max_age_ms"].as<double>(), 0.0, 50.0)
     : 50.0;
@@ -949,8 +962,9 @@ int main(int argc, char * argv[])
   tools::logger()->info(
     "[AIMAUDIT] schema=1 prediction=AIMPRED observation=AIMOBS clock=steady_ns observation_tail_ms=100");
   tools::logger()->info(
-    "[MODELREBUILD] enabled={} after_requests={} counter=matched_host_request cadence=preserve_last_request",
-    xuc.enabled() && xuc_model_rebuild_after_requests > 0, xuc_model_rebuild_after_requests);
+    "[MODELREBUILD] enabled={} after_requests={} settle_ms={:.0f} counter=matched_host_request cadence=preserve_last_request",
+    xuc.enabled() && xuc_model_rebuild_after_requests > 0, xuc_model_rebuild_after_requests,
+    xuc.enabled() ? xuc_model_settle_ms : 0.0);
 
 #ifdef AMENT_CMAKE_FOUND
   // 发布静态TF: gimbal -> camera（使用标定参数）
@@ -1053,7 +1067,8 @@ int main(int argc, char * argv[])
   // 最近一次实际开出 shoot=1 的时刻；供“定时回退”节奏门控使用（见 cadence gate）
   std::chrono::steady_clock::time_point xuc_last_shot_issue_time{};
   auto_aim::ModelRebuildCounter model_rebuild(
-    xuc.enabled() ? xuc_model_rebuild_after_requests : 0);
+    xuc.enabled() ? xuc_model_rebuild_after_requests : 0,
+    xuc.enabled() ? xuc_model_settle_ms : 0.0);
   std::chrono::steady_clock::time_point model_rebuild_started{};
   // 开火脉冲保持：xuc_shoot_pulse_active 为真时，把 shoot 维持到 xuc_shoot_pulse_until。
   // 仅在开火上升沿武装；保持期间的续帧不视为新开火。
@@ -1502,7 +1517,8 @@ int main(int argc, char * argv[])
       prediction_geometry_initialized = false;
     }
     if (model_rebuild.update_trust(
-          tracker.state() == "tracking", tracker_converged, yaw_motion_model_trusted)) {
+          tracker.state() == "tracking", tracker_converged, yaw_motion_model_trusted,
+          std::chrono::duration_cast<std::chrono::nanoseconds>(t.time_since_epoch()).count())) {
       tools::logger()->info(
         "[MODELREBUILD] ready model_generation={} elapsed_ms={:.1f} tracker={}",
         tracker.model_generation(),
@@ -3664,66 +3680,70 @@ int main(int argc, char * argv[])
     bool shot_rising_edge_this_frame = false;
     std::chrono::steady_clock::time_point shot_diag_issue_time{};
 
-    // 发送命令到 PlotJuggler（显示实际发送的值）
-    nlohmann::json plot_data;
-    plot_data["t"] = std::chrono::duration<double>(t - std::chrono::steady_clock::time_point()).count();
-    plot_data["cmd_yaw"] = command.yaw * 180.0 / M_PI;
-    plot_data["cmd_pitch"] =
-      xuc_pitch_sign_for_log * command.pitch * 180.0 / M_PI;
-    plot_data["yaw_tracking_error_raw_deg"] = std::isfinite(yaw_tracking_error_raw_rad)
-      ? nlohmann::json(yaw_tracking_error_raw_rad * 180.0 / M_PI)
-      : nlohmann::json(nullptr);
-    plot_data["yaw_tracking_integral_raw_deg"] =
-      yaw_tracking_integral_raw_rad * 180.0 / M_PI;
-    plot_data["yaw_tracking_output_raw_deg"] =
-      yaw_tracking_output_raw_rad * 180.0 / M_PI;
-    plot_data["control"] = command.control;
-    plot_data["shoot"] = command.shoot;
-    if (gyro_predicted_impact_yaw_valid) {
-      plot_data["gyro_predicted_impact_yaw_error_deg"] =
-        gyro_predicted_impact_yaw_error_rad * 180.0 / M_PI;
-    } else {
-      plot_data["gyro_predicted_impact_yaw_error_deg"] = nullptr;
+    // PlotJuggler streaming is optional: building 37 JSON fields every frame
+    // costs real time even when nothing listens, so skip it entirely.
+    if (plotter_streaming_enabled) {
+      // 发送命令到 PlotJuggler（显示实际发送的值）
+      nlohmann::json plot_data;
+      plot_data["t"] = std::chrono::duration<double>(t - std::chrono::steady_clock::time_point()).count();
+      plot_data["cmd_yaw"] = command.yaw * 180.0 / M_PI;
+      plot_data["cmd_pitch"] =
+        xuc_pitch_sign_for_log * command.pitch * 180.0 / M_PI;
+      plot_data["yaw_tracking_error_raw_deg"] = std::isfinite(yaw_tracking_error_raw_rad)
+        ? nlohmann::json(yaw_tracking_error_raw_rad * 180.0 / M_PI)
+        : nlohmann::json(nullptr);
+      plot_data["yaw_tracking_integral_raw_deg"] =
+        yaw_tracking_integral_raw_rad * 180.0 / M_PI;
+      plot_data["yaw_tracking_output_raw_deg"] =
+        yaw_tracking_output_raw_rad * 180.0 / M_PI;
+      plot_data["control"] = command.control;
+      plot_data["shoot"] = command.shoot;
+      if (gyro_predicted_impact_yaw_valid) {
+        plot_data["gyro_predicted_impact_yaw_error_deg"] =
+          gyro_predicted_impact_yaw_error_rad * 180.0 / M_PI;
+      } else {
+        plot_data["gyro_predicted_impact_yaw_error_deg"] = nullptr;
+      }
+      if (gyro_event_schedule_valid) {
+        plot_data["gyro_event_due_ms"] = gyro_event_lead_error_s * 1000.0;
+        plot_data["gyro_event_period_ms"] = gyro_event_face_period_s * 1000.0;
+        plot_data["gyro_event_interval_safe"] = gyro_event_interval_safe;
+        plot_data["gyro_event_half_window_deg"] =
+          gyro_event_half_window_rad * 180.0 / M_PI;
+        plot_data["gyro_event_worst_phase_deg"] =
+          gyro_event_worst_phase_rad * 180.0 / M_PI;
+        plot_data["gyro_event_combined_phase_deg"] =
+          gyro_event_combined_phase_rad * 180.0 / M_PI;
+        plot_data["gyro_event_phase_uncertainty_deg"] =
+          gyro_event_phase_uncertainty_rad * 180.0 / M_PI;
+        plot_data["gyro_event_face_id"] = gyro_event_face_id;
+        plot_data["gyro_event_face_alignment_deg"] =
+          gyro_event_face_alignment_rad * 180.0 / M_PI;
+        plot_data["gyro_event_gimbal_tracking_error_deg"] =
+          gyro_event_gimbal_tracking_error_rad * 180.0 / M_PI;
+      } else {
+        plot_data["gyro_event_due_ms"] = nullptr;
+        plot_data["gyro_event_period_ms"] = nullptr;
+        plot_data["gyro_event_interval_safe"] = false;
+        plot_data["gyro_event_half_window_deg"] = nullptr;
+        plot_data["gyro_event_worst_phase_deg"] = nullptr;
+        plot_data["gyro_event_combined_phase_deg"] = nullptr;
+        plot_data["gyro_event_phase_uncertainty_deg"] = nullptr;
+        plot_data["gyro_event_face_id"] = nullptr;
+        plot_data["gyro_event_face_alignment_deg"] = nullptr;
+        plot_data["gyro_event_gimbal_tracking_error_deg"] = nullptr;
+      }
+      // 电控的欧拉角（从MCU获取的姿态）
+      plot_data["mcu_yaw"] = ypr[0] * 180.0 / M_PI;
+      plot_data["mcu_pitch"] = ypr[1] * 180.0 / M_PI;
+      plot_data["mcu_roll"] = ypr[2] * 180.0 / M_PI;
+      // 电控的四元数（从MCU获取）
+      plot_data["mcu_q_w"] = q.w();
+      plot_data["mcu_q_x"] = q.x();
+      plot_data["mcu_q_y"] = q.y();
+      plot_data["mcu_q_z"] = q.z();
+      plotter.plot(plot_data);
     }
-    if (gyro_event_schedule_valid) {
-      plot_data["gyro_event_due_ms"] = gyro_event_lead_error_s * 1000.0;
-      plot_data["gyro_event_period_ms"] = gyro_event_face_period_s * 1000.0;
-      plot_data["gyro_event_interval_safe"] = gyro_event_interval_safe;
-      plot_data["gyro_event_half_window_deg"] =
-        gyro_event_half_window_rad * 180.0 / M_PI;
-      plot_data["gyro_event_worst_phase_deg"] =
-        gyro_event_worst_phase_rad * 180.0 / M_PI;
-      plot_data["gyro_event_combined_phase_deg"] =
-        gyro_event_combined_phase_rad * 180.0 / M_PI;
-      plot_data["gyro_event_phase_uncertainty_deg"] =
-        gyro_event_phase_uncertainty_rad * 180.0 / M_PI;
-      plot_data["gyro_event_face_id"] = gyro_event_face_id;
-      plot_data["gyro_event_face_alignment_deg"] =
-        gyro_event_face_alignment_rad * 180.0 / M_PI;
-      plot_data["gyro_event_gimbal_tracking_error_deg"] =
-        gyro_event_gimbal_tracking_error_rad * 180.0 / M_PI;
-    } else {
-      plot_data["gyro_event_due_ms"] = nullptr;
-      plot_data["gyro_event_period_ms"] = nullptr;
-      plot_data["gyro_event_interval_safe"] = false;
-      plot_data["gyro_event_half_window_deg"] = nullptr;
-      plot_data["gyro_event_worst_phase_deg"] = nullptr;
-      plot_data["gyro_event_combined_phase_deg"] = nullptr;
-      plot_data["gyro_event_phase_uncertainty_deg"] = nullptr;
-      plot_data["gyro_event_face_id"] = nullptr;
-      plot_data["gyro_event_face_alignment_deg"] = nullptr;
-      plot_data["gyro_event_gimbal_tracking_error_deg"] = nullptr;
-    }
-    // 电控的欧拉角（从MCU获取的姿态）
-    plot_data["mcu_yaw"] = ypr[0] * 180.0 / M_PI;
-    plot_data["mcu_pitch"] = ypr[1] * 180.0 / M_PI;
-    plot_data["mcu_roll"] = ypr[2] * 180.0 / M_PI;
-    // 电控的四元数（从MCU获取）
-    plot_data["mcu_q_w"] = q.w();
-    plot_data["mcu_q_x"] = q.x();
-    plot_data["mcu_q_y"] = q.y();
-    plot_data["mcu_q_z"] = q.z();
-    plotter.plot(plot_data);
 
     // 🎯 关键：将 send 移到循环开头
     // 这样下一次循环时，会先发送这个命令，然后才读取相机

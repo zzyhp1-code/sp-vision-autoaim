@@ -16,12 +16,19 @@ public:
 
   ~Plotter();
 
+  // PlotJuggler streaming costs a JSON serialisation plus a UDP send on every
+  // frame, and it used to run unconditionally, so disabling the display did not
+  // remove it. Turn it off for field runs where nothing is listening.
+  void set_enabled(bool enabled) { enabled_ = enabled; }
+  bool enabled() const { return enabled_; }
+
   void plot(const nlohmann::json & json);
 
 private:
   int socket_;
   sockaddr_in destination_;
   std::mutex mutex_;
+  bool enabled_ = true;
 };
 
 }  // namespace tools

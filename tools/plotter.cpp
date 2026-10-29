@@ -19,7 +19,8 @@ Plotter::~Plotter() { ::close(socket_); }
 
 void Plotter::plot(const nlohmann::json & json)
 {
-  std::lock_guard<std::mutex> lock(mutex_);
+  if (!enabled_) return;
+  std::lock_guard<std::mutex> mutex_lock(mutex_);
   auto data = json.dump();
   ::sendto(
     socket_, data.c_str(), data.length(), 0, reinterpret_cast<sockaddr *>(&destination_),
