@@ -687,6 +687,41 @@ int main(int argc, char * argv[])
       ? std::max(0.0, integration_yaml["xuc_event_trigger_window_ms"].as<double>()) /
           1000.0
       : 0.025;
+  // Fixed-cadence request mode. When enabled the fire decision stops asking "is
+  // the plate aligned this frame" (a window narrower than one frame at 60 fps) and
+  // instead asks "has the anchored clock reached its due instant". The phase offset
+  // is the single number tuned on the range: it is how long after a face centre
+  // passes the bore that a shot must be requested, so it absorbs the whole
+  // command-to-impact chain. every_n_faces trades rate for mechanical follow.
+  const bool xuc_periodic_fire_enabled =
+    integration_yaml["xuc_periodic_fire_enabled"] &&
+    integration_yaml["xuc_periodic_fire_enabled"].as<bool>();
+  const double xuc_periodic_phase_offset_s =
+    integration_yaml["xuc_periodic_phase_offset_ms"]
+      ? integration_yaml["xuc_periodic_phase_offset_ms"].as<double>() / 1000.0
+      : 0.410;
+  const int xuc_periodic_every_n_faces =
+    integration_yaml["xuc_periodic_every_n_faces"]
+      ? std::clamp(integration_yaml["xuc_periodic_every_n_faces"].as<int>(), 1, 16)
+      : 2;
+  const double xuc_periodic_max_observation_age_s =
+    integration_yaml["xuc_periodic_max_observation_age_ms"]
+      ? std::clamp(
+          integration_yaml["xuc_periodic_max_observation_age_ms"].as<double>(),
+          5.0, 500.0) / 1000.0
+      : 0.100;
+  // The test chassis spins at a mechanically fixed rate, so the cadence clock is
+  // driven by this constant instead of the live EKF rate. A live rate moves every
+  // frame, and any rate-keyed reset then drops the clock continuously: field log
+  // 2026-10-31_04-15-44 showed anchored=1 only 53% of the time and calibration
+  // stuck at 0 for the whole 87 s run. Only the sign (rotation direction) is taken
+  // from the estimator, because that genuinely changes.
+  const bool xuc_periodic_fixed_omega_configured =
+    integration_yaml["xuc_periodic_fixed_omega_rad_s"] &&
+    integration_yaml["xuc_periodic_fixed_omega_rad_s"].as<double>() > 0.0;
+  const double xuc_periodic_fixed_omega_rad_s = xuc_periodic_fixed_omega_configured
+    ? integration_yaml["xuc_periodic_fixed_omega_rad_s"].as<double>()
+    : 4.42;
   const double xuc_event_send_late_tolerance_s =
     integration_yaml["xuc_event_send_late_tolerance_ms"]
       ? std::clamp(
@@ -912,6 +947,25 @@ int main(int argc, char * argv[])
   gyro_phase_config.min_lock_updates = xuc_event_min_lock_updates;
   gyro_phase_config.relock_after_rejections = xuc_event_relock_rejections;
   auto_aim::GyroPhaseScheduler gyro_phase_scheduler(gyro_phase_config);
+  // Fixed-cadence request clock. A per-frame "is the plate aligned right now"
+  // test cannot request shots on a fast gyro: at 60 fps the target turns several
+  // degrees per frame while the usable window is a small slice of a face period,
+  // so nearly every frame is rejected and the accepted ones are luck. Anchoring a
+  // clock on a face-centre observation and requesting once per N faces is what the
+  // 100%-hit sentry build does, and this chassis has the same fixed-rate target.
+  auto_aim::FixedCadenceTrigger fixed_cadence_trigger;
+  {
+    // The chassis rate is mechanically fixed, so the anchored period is already
+    // exact and calibration would only add motion to a correct value.
+    auto_aim::FixedCadenceTrigger::Config cadence_config;
+    cadence_config.calibrate_period = !xuc_periodic_fixed_omega_configured;
+    fixed_cadence_trigger.set_config(cadence_config);
+  }
+  bool fixed_cadence_active = false;
+  bool fixed_cadence_due = false;
+  double fixed_cadence_phase_error_rad = NAN;
+  double fixed_cadence_interval_s = NAN;
+  double fixed_cadence_until_due_s = NAN;
   auto_aim::GyroFaceSelector gyro_face_selector(xuc_event_face_max_alignment_rad);
   auto_aim::RobustRangeFilter robust_range_filter(robust_range_config);
   auto_aim::RotationModelManager::Config rotation_model_config;
@@ -1617,6 +1671,30 @@ int main(int argc, char * argv[])
         auto_aim::RotationModelManager::Mode::high_speed_phase;
     gyro_phase_model_trusted = gyro_model_fresh &&
       rotation_model.phase_fire_trusted;
+    // Centre-only gimbal policy.
+    //
+    // On a fast gyro the visible plate bearing sweeps through a full quarter turn
+    // per face, so chasing plates swings the gimbal continuously and every hand
+    // over adds a jump even though the range and bearing to the vehicle centre
+    // never change. Above the high-speed threshold, and whenever the fixed-cadence
+    // clock is enabled, the gimbal therefore tracks the vehicle centre only; plate
+    // chasing is switched off entirely rather than left as a fallback.
+    const bool centre_only_gimbal =
+      xuc_periodic_fire_enabled ||
+      rotation_model.mode == auto_aim::RotationModelManager::Mode::high_speed_phase;
+    // When the centre is not fresh the safe action is to command nothing: holding
+    // still for a frame or two beats following whatever plate happens to be
+    // visible, which would put the bore on a different target every hand over.
+    const bool cadence_center_hold = centre_only_gimbal && vehicle_model_fresh;
+    if (centre_only_gimbal && !vehicle_model_fresh) {
+      static int cadence_hold_log_counter = 0;
+      if (++cadence_hold_log_counter % 60 == 0) {
+        tools::logger()->warn(
+          "[CENTRE] not fresh; holding gimbal tracker={} mode={} trusted={}",
+          tracker.state(), auto_aim::RotationModelManager::name(rotation_model.mode),
+          rotation_model.tracker_trusted ? 1 : 0);
+      }
+    }
     if (vehicle_model_fresh) {
       // Both low/medium rotation and high-speed gyro share the same stable
       // vehicle-centre gimbal reference.  Only their firing clocks differ:
@@ -1816,41 +1894,6 @@ int main(int argc, char * argv[])
         targets.front().armor_num() == 4 && native_fire_prediction.whole_ekf_geometry &&
         rotation_model.mode == auto_aim::RotationModelManager::Mode::high_speed_phase &&
         xuc_fire_phase_window_rad <= 0.0;
-      for (const auto & match : face_prediction_residual.observe(frame_ns, context, observations)) {
-        const nlohmann::json record = {
-          {"schema", 1}, {"epoch", match.epoch}, {"model_generation", match.context.model_generation},
-          {"target", match.context.target_id}, {"geometry", match.context.geometry},
-          {"source", match.context.source}, {"speed_mode", match.context.speed_mode},
-          {"direction", match.context.rotation_sign}, {"face", match.face_id},
-          {"passage", match.passage_id}, {"issued_ns", match.issued_ns},
-          {"prediction_ns", match.prediction_ns}, {"left_ns", match.left_ns}, {"right_ns", match.right_ns},
-          {"predicted_xyz", match.predicted_xyz}, {"observed_xyz", match.observed_xyz},
-          {"error_xyz", match.error_xyz}, {"yaw_error_deg", match.yaw_error_rad * 180.0 / M_PI},
-          {"position_error_m", match.position_error_m}, {"omega_rad_s", match.context.omega_rad_s},
-          {"delay_s", match.context.base_delay_s}, {"speed_mps", match.context.bullet_speed_mps}};
-        tools::logger()->info("[PREDRES] {}", record.dump());
-      }
-      for (const auto & pair : fixed_center_prediction_audit.observe(frame_ns, context, observations)) {
-        const auto & a = pair.main;
-        const auto & b = pair.fixed;
-        const auto & m = pair.metadata;
-        const nlohmann::json record = {
-          {"schema", 1}, {"epoch", a.epoch}, {"model_generation", a.context.model_generation},
-          {"target", a.context.target_id}, {"geometry", a.context.geometry}, {"source", a.context.source},
-          {"speed_mode", a.context.speed_mode}, {"direction", a.context.rotation_sign},
-          {"face", a.face_id}, {"passage", a.passage_id}, {"issued_ns", a.issued_ns},
-          {"prediction_ns", a.prediction_ns}, {"left_ns", a.left_ns}, {"right_ns", a.right_ns},
-          {"main_xyz", a.predicted_xyz}, {"fixed_xyz", b.predicted_xyz}, {"observed_xyz", a.observed_xyz},
-          {"main_yaw_error_deg", a.yaw_error_rad * 180.0 / M_PI},
-          {"fixed_yaw_error_deg", b.yaw_error_rad * 180.0 / M_PI},
-          {"main_position_error_m", a.position_error_m}, {"fixed_position_error_m", b.position_error_m},
-          {"model_epoch", m.model_epoch}, {"revision", m.revision}, {"reference_ns", m.reference_ns},
-          {"stationary_supported", m.stationary_supported},
-          {"reason", auto_aim::FixedCenterShadow::reason_name(m.reason)},
-          {"heldout_center_speed_mps", m.center_speed_mps},
-          {"heldout_yaw_p90_deg", m.heldout_yaw_p90_rad * 180.0 / M_PI}, {"controls_output", false}};
-        tools::logger()->info("[FIXEDCENTER_RES] {}", record.dump());
-      }
       if (native_fire_prediction.whole_ekf_geometry && targets.front().armor_num() == 4) {
         const auto & x = frame_prediction_model.state;
         auto_aim::FixedCenterShadow::Seed seed;
@@ -1861,21 +1904,6 @@ int main(int argc, char * argv[])
         const auto shadow = fixed_center_shadow.update(frame_ns, context, seed, observations);
         if (shadow.fitted) {
           const auto & state = shadow.model.state;
-          const nlohmann::json record = {
-            {"schema", 1}, {"epoch", shadow.epoch}, {"revision", shadow.revision},
-            {"model_generation", context.model_generation}, {"direction", context.rotation_sign},
-            {"train_samples", shadow.train_samples}, {"heldout_samples", shadow.heldout_samples},
-            {"heldout_face_mask", shadow.heldout_face_mask}, {"evaluable", shadow.evaluable},
-            {"heldout_yaw_p90_deg", shadow.heldout_yaw_p90_rad * 180.0 / M_PI},
-            {"heldout_position_p90_m", shadow.heldout_position_p90_m},
-            {"motion_evaluable", shadow.motion_evaluable},
-            {"heldout_center_speed_mps", shadow.heldout_center_speed_mps},
-            {"heldout_motion_span_s", shadow.heldout_motion_span_s},
-            {"training_cost", shadow.training_cost}, {"reference_ns", shadow.model.reference_ns},
-            {"center_xy", {state.center_x, state.center_y}}, {"radii_m", state.radius_m},
-            {"height_m", state.height_m}, {"phase_rad", state.phase_rad},
-            {"omega_rad_s", state.omega_rad_s}, {"controls_output", false}};
-          tools::logger()->info("[FIXEDCENTER_SHADOW] {}", record.dump());
         }
       } else {
         if (fixed_center_shadow.output().samples || fixed_center_shadow.output().evaluable)
@@ -1892,17 +1920,6 @@ int main(int argc, char * argv[])
         const auto paired = fixed_center_prediction_audit.enqueue(prediction, fixed_center_shadow);
         if (paired.enqueued) {
           const auto & forecast = paired.forecast;
-          const nlohmann::json record = {
-            {"schema", 1}, {"model_generation", context.model_generation}, {"target", context.target_id},
-            {"geometry", context.geometry}, {"source", context.source}, {"speed_mode", context.speed_mode},
-            {"direction", context.rotation_sign}, {"face", prediction.face_id},
-            {"issued_ns", issued_ns}, {"prediction_ns", prediction.prediction_ns},
-            {"main_xyz", prediction.xyz}, {"fixed_xyz", forecast.xyz},
-            {"model_epoch", forecast.fit.epoch}, {"revision", forecast.fit.revision},
-            {"reference_ns", forecast.fit.model.reference_ns},
-            {"stationary_supported", forecast.stationary_supported},
-            {"reason", auto_aim::FixedCenterShadow::reason_name(forecast.reason)}, {"controls_output", false}};
-          tools::logger()->info("[FIXEDCENTER_PRED] {}", record.dump());
         }
       } else {
         fixed_center_prediction_audit.skip_main();
@@ -1919,20 +1936,6 @@ int main(int argc, char * argv[])
         const auto & fit = status.fit;
         const auto & counters = fixed_center_prediction_audit.counters();
         const auto & fits = fixed_center_shadow.counters();
-        const nlohmann::json record = {
-          {"schema", 1}, {"frame_ns", frame_ns}, {"checked_ns", status_ns},
-          {"model_generation", context.model_generation}, {"epoch", fit.epoch}, {"revision", fit.revision},
-          {"reason", status_reason}, {"available", status.available},
-          {"stationary_supported", status.stationary_supported}, {"fit_attempted", fit.fit_attempted},
-          {"samples", fit.samples}, {"reference_ns", fit.model.reference_ns},
-          {"fit_attempts_total", fits.fit_attempts}, {"fit_failures_total", fits.fit_failures},
-          {"fit_resets_total", fits.resets},
-          {"heldout_center_speed_mps", fit.heldout_center_speed_mps},
-          {"heldout_yaw_p90_deg", fit.heldout_yaw_p90_rad * 180.0 / M_PI},
-          {"attempted_total", counters.attempted}, {"available_total", counters.available},
-          {"enqueued_total", counters.enqueued}, {"main_skipped_total", counters.main_skipped},
-          {"reason_counts", counters.reasons}, {"controls_output", false}};
-        tools::logger()->info("[FIXEDCENTER_STATUS] {}", record.dump());
         fixed_center_last_status = status_reason;
         fixed_center_last_status_time = status_time;
       }
@@ -2052,25 +2055,6 @@ int main(int argc, char * argv[])
         selected_prediction_source != fixed_center_last_control_source ||
         tracker.model_generation() != fixed_center_last_control_generation ||
         takeover_time - fixed_center_last_control_time >= std::chrono::seconds(1)) {
-      const nlohmann::json record = {
-        {"schema", 1}, {"enabled", fixed_center_prediction_enabled},
-        {"predictor", native_fire_prediction.fixed_center ? "fixed_center" : "target"},
-        {"reason", takeover_reason}, {"model_generation", tracker.model_generation()},
-        {"source_key", selected_prediction_source}, {"checked_ns", takeover_ns},
-        {"frames_total", predictor_frames}, {"eligible_frames_total", predictor_eligible_frames},
-        {"fixed_frames_total", fixed_predictor_frames}, {"solve_fallbacks_total", predictor_solve_fallbacks},
-        {"source_transitions_total", predictor_source_transitions},
-        {"epoch", native_fire_prediction.fixed_center_epoch},
-        {"eligible_terms", fixed_center_eligibility_terms},
-        {"revision", native_fire_prediction.fixed_center_revision},
-        {"reference_ns", native_fire_prediction.model_reference_ns},
-        {"valid_until_ns", native_fire_prediction.model_valid_until_ns},
-        {"baseline_valid", baseline_prediction_valid}, {"selected_valid", native_fire_prediction.valid},
-        {"baseline_face", baseline_fire_prediction.face_id}, {"selected_face", native_fire_prediction.face_id},
-        {"baseline_prediction_ns", baseline_fire_prediction.prediction_ns},
-        {"selected_prediction_ns", native_fire_prediction.prediction_ns},
-        {"baseline_yaw_rad", baseline_command.yaw}, {"selected_yaw_rad", command.yaw}};
-      tools::logger()->info("[FIXEDCENTER_CONTROL] {}", record.dump());
       fixed_center_last_control_status = takeover_reason;
       fixed_center_last_control_source = selected_prediction_source;
       fixed_center_last_control_generation = tracker.model_generation();
@@ -2137,10 +2121,16 @@ int main(int argc, char * argv[])
       double measured_yaw = 0.0;
       if (direct_measurement_armor != nullptr) {
         const auto & measured_armor = *direct_measurement_armor;
-        measured_yaw = gyro_center_follow_active
+        // Centre-only policy: never fall back to the visible plate bearing. With a
+        // fixed range the required bearing barely moves, so holding the centre is
+        // both correct and quiet.
+        measured_yaw = centre_only_gimbal
           ? gyro_center_yaw
-          : std::atan2(measured_armor.xyz_in_world.y(), measured_armor.xyz_in_world.x());
-        valid_measurement = std::isfinite(measured_yaw);
+          : (gyro_center_follow_active
+               ? gyro_center_yaw
+               : std::atan2(measured_armor.xyz_in_world.y(), measured_armor.xyz_in_world.x()));
+        valid_measurement = std::isfinite(measured_yaw) &&
+          (!centre_only_gimbal || std::isfinite(gyro_center_yaw));
         if (valid_measurement && direct_yaw_focal_x_px > 0.0 && !img.empty()) {
           double center_x_px = measured_armor.center.x;
           if (!measured_armor.points.empty()) {
@@ -2201,10 +2191,11 @@ int main(int argc, char * argv[])
         command.control = direct_yaw_control_confirmed;
         if (!direct_yaw_control_confirmed) {
           command.yaw = direct_yaw_filtered;
-        } else if (gyro_center_follow_active) {
-          // In every rotating-target mode the visible plate bearing oscillates
-          // around the vehicle. Following the EKF rotation center avoids
-          // switching the gimbal at each of the four plate hand-overs.
+        } else if (centre_only_gimbal || gyro_center_follow_active) {
+          // Centre-only policy on a fast gyro: the visible plate bearing sweeps a
+          // quarter turn per face, so chasing it swings the gimbal continuously and
+          // adds a jump at every hand over even though the vehicle centre barely
+          // moves. Aim the centre instead.
           double center_command = std::remainder(
             direct_yaw_filtered + direct_yaw_command_correction_rad,
             2.0 * M_PI);
@@ -2471,6 +2462,21 @@ int main(int argc, char * argv[])
           "[XUC][PERSIST] visual lost: holding control, locking attitude");
         persist_logged = true;
       }
+    }
+
+    // Centre-only hold: when the vehicle-centre estimate is not fresh, command
+    // nothing instead of chasing a plate. With a fixed range and a target spinning
+    // about its own centre the required bearing barely moves, so holding still for
+    // a frame or two beats a hand-over swing. Shoot is dropped too, because the
+    // frame has no validated centre to fire on.
+    if (centre_only_gimbal && !cadence_center_hold) {
+      static int cadence_center_hold_log_counter = 0;
+      if (command.control && ++cadence_center_hold_log_counter % 60 == 1) {
+        tools::logger()->warn(
+          "[CENTRE] not fresh: dropping yaw command for this frame");
+      }
+      command.control = false;
+      command.shoot = false;
     }
 
     if (final_yaw_command_max_rate_rad_s > 0.0 && xuc.enabled()) {
@@ -2863,9 +2869,67 @@ int main(int argc, char * argv[])
       } else if (!gyro_center_follow_active) {
         gyro_phase_scheduler.reset();
         gyro_face_selector.reset();
+        fixed_cadence_trigger.reset();
         event_last_fired_cycle = -1;
       }
       if (!ev_gyro_active) gyro_face_selector.reset();
+
+      // ---- Fixed-cadence request clock ----
+      // Same folded phase and signed rate that feed the PLL.  The clock is only
+      // advanced by fresh, associated observations; a stale sample is dropped
+      // inside observe() and clears the anchor so nothing fires blind.
+      fixed_cadence_active = false;
+      fixed_cadence_due = false;
+      fixed_cadence_phase_error_rad = NAN;
+      fixed_cadence_interval_s = NAN;
+      fixed_cadence_until_due_s = NAN;
+      if (xuc_periodic_fire_enabled && ev_gyro_active &&
+          direct_measurement_armor != nullptr && direct_yaw_measurement_fresh &&
+          std::isfinite(gyro_center_yaw) && std::isfinite(gyro_body_phase_rad) &&
+          std::isfinite(gyro_omega_rad_s)) {
+        const double folded_phase = std::remainder(
+          gyro_body_phase_rad - gyro_center_yaw, M_PI / 2.0);
+        const double observation_time_s = std::chrono::duration<double>(
+          t.time_since_epoch()).count();
+        const double decision_now_s = std::chrono::duration<double>(
+          std::chrono::steady_clock::now().time_since_epoch()).count();
+        // Magnitude from the fixed mechanical rate, direction from the estimator.
+        const double cadence_omega_rad_s = std::copysign(
+          xuc_periodic_fixed_omega_rad_s, gyro_omega_rad_s);
+        const auto cadence_solution = fixed_cadence_trigger.observe(
+          decision_now_s, observation_time_s, folded_phase, cadence_omega_rad_s,
+          xuc_periodic_phase_offset_s, xuc_periodic_every_n_faces,
+          xuc_periodic_max_observation_age_s);
+        fixed_cadence_active = fixed_cadence_trigger.anchored();
+        fixed_cadence_due = cadence_solution.valid;
+        fixed_cadence_phase_error_rad = cadence_solution.phase_error_rad;
+        fixed_cadence_interval_s = cadence_solution.face_period_s;
+        fixed_cadence_until_due_s = cadence_solution.time_until_command_s;
+        // Diagnostics. The clock is the only thing deciding when to request, so its
+        // state has to be visible: a wrong phase_offset shows up as a steady
+        // visual-vs-clock offset, a drifting period as a growing calibration count
+        // with no drop in phase error.
+        static int periodic_log_counter = 0;
+        if (++periodic_log_counter % 12 == 0) {
+          tools::logger()->info(
+            "[PERIODIC] anchored={} due={} until_due_ms={:.1f} "
+            "cross_resid_ms={:+.2f} cross_deg={:+.2f} crossings={} "
+            "face_period_ms={:.1f} interval_ms={:.1f} calib={} "
+            "offset_ms={:.1f} n_faces={} omega={:+.3f}",
+            fixed_cadence_active ? 1 : 0, fixed_cadence_due ? 1 : 0,
+            cadence_solution.time_until_command_s * 1000.0,
+            cadence_solution.crossing_residual_s * 1000.0,
+            cadence_solution.phase_error_rad * 180.0 / M_PI,
+            cadence_solution.crossing_count,
+            cadence_solution.face_period_s * 1000.0,
+            fixed_cadence_interval_s * xuc_periodic_every_n_faces * 1000.0,
+            cadence_solution.calibration_updates,
+            xuc_periodic_phase_offset_s * 1000.0,
+            xuc_periodic_every_n_faces, cadence_omega_rad_s);
+        }
+      } else if (!ev_gyro_active) {
+        fixed_cadence_trigger.reset();
+      }
 
       // The flight-time estimate uses the current measured armor range.  The
       // interval gate below separately accounts for flight-time uncertainty.
@@ -3064,13 +3128,21 @@ int main(int argc, char * argv[])
         gyro_event_schedule_valid, gyro_event_interval_safe,
         xuc_gyro_fire_min_consecutive_frames);
       const bool event_gate_authoritative = fire_window_policy.uses_event_clock();
-      const bool yaw_gate_open = gyro_predicted_fire_active
+      // Fixed-cadence override.  When the periodic clock is enabled and anchored,
+      // the yaw decision is "has the clock reached its due instant", not "does the
+      // per-frame alignment fit a window narrower than one frame".  The anchor is
+      // dropped by observe() as soon as observations go stale, so this cannot fire
+      // on a lost target.
+      const bool cadence_yaw_gate_open =
+        xuc_periodic_fire_enabled && fixed_cadence_due;
+      const bool yaw_gate_open = cadence_yaw_gate_open ||
+        (gyro_predicted_fire_active
         ? (event_gate_authoritative
              ? gyro_event_gate_open
              : (!xuc_gyro_require_event_lock_for_fire && gyro_yaw_gate_native_open))
         : (vehicle_predicted_fire_active
              ? gyro_yaw_gate_native_open
-             : stationary_yaw_gate_open);
+             : stationary_yaw_gate_open));
       fire_predictive_route = predictive_fire_active;
       frame_fire_gates.convergence = convergence_gate_open;
       frame_fire_gates.motion = motion_transition_gate_open;
@@ -3110,7 +3182,12 @@ int main(int argc, char * argv[])
           if (std::isfinite(nearest)) fire_impact_alignment_rad = nearest;
         }
       }
-      frame_fire_gates.alignment = !(xuc_fire_impact_alignment_rad > 0.0) ||
+      // In fixed-cadence mode the request instant is owned by the clock, so the
+      // per-frame alignment window must not veto it: that window is narrower than
+      // one frame at 60 fps, which is exactly the reason requests were so sparse.
+      // The clock already guarantees a fresh observation and a sane phase.
+      frame_fire_gates.alignment = (xuc_periodic_fire_enabled && fixed_cadence_active) ||
+        !(xuc_fire_impact_alignment_rad > 0.0) ||
         (std::isfinite(fire_impact_alignment_rad) &&
          fire_impact_alignment_rad <= xuc_fire_impact_alignment_rad);
       // Plate-handover suppression: compare this frame's predicted aim point with
@@ -3935,6 +4012,24 @@ int main(int argc, char * argv[])
           image_ns, issue_ns, tx_call_ns);
         const int prior_model_requests = model_rebuild.sent_requests();
         const bool rebuild_due = model_rebuild.record_request(xuc_pending_shot_id, tx_call_matches);
+        // Advance the periodic clock only on a request that actually reached the
+        // serial write. Doing it on the gate decision would let a suppressed frame
+        // consume the slot and silently stop the cadence.
+        if (xuc_periodic_fire_enabled && fixed_cadence_active && tx_call_matches) {
+          // Send lateness against the clock slot tells phase_offset tuning apart
+          // from cadence problems: a large positive value means the slot was found
+          // late (detection or gate delay), not that the offset is wrong.
+          tools::logger()->info(
+            "[PERIODIC] fire id={} until_due_ms={:.1f} cross_deg={:+.2f} crossings={} "
+            "face_period_ms={:.1f} offset_ms={:.1f} n_faces={}",
+            xuc_pending_shot_id,
+            std::isfinite(fixed_cadence_until_due_s) ? fixed_cadence_until_due_s * 1000.0 : NAN,
+            fixed_cadence_phase_error_rad * 180.0 / M_PI,
+            fixed_cadence_trigger.crossing_count(),
+            std::isfinite(fixed_cadence_interval_s) ? fixed_cadence_interval_s * 1000.0 : NAN,
+            xuc_periodic_phase_offset_s * 1000.0, xuc_periodic_every_n_faces);
+          fixed_cadence_trigger.mark_fired();
+        }
         if (model_rebuild.sent_requests() != prior_model_requests) {
           tools::logger()->info(
             "[MODELREBUILD] request id={} model_generation={} sent_requests={} threshold={} scheduled={}",

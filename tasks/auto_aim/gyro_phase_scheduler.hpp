@@ -520,6 +520,404 @@ private:
   double phase_uncertainty_s_ = std::numeric_limits<double>::infinity();
 };
 
+// Fixed-cadence request clock for a steadily spinning four-armor target.
+//
+// Why this exists: asking "is the plate aligned right now" every frame cannot
+// work at speed. One face passes the bore in (pi/2)/|omega| seconds and the
+// usable window is a small fraction of that; at 60 fps the target turns several
+// degrees per frame, so a per-frame alignment test rejects nearly every frame and
+// the few it accepts are decided by luck. This class instead anchors a clock on
+// one physical face-centre observation, then requests a shot once per N faces at
+// a configured phase offset. Observed face crossings refine period and phase
+// slowly, so the clock tracks the real target instead of a nominal speed.
+//
+// The caller must still apply every safety gate (AUTO, attitude, fresh
+// observation, gimbal readiness, lower-level permit). This answers "is it time to
+// request", not "is it safe to fire".
+class FixedCadenceTrigger
+{
+public:
+  struct Config
+  {
+    double anchor_tolerance_rad = 20.0 * M_PI / 180.0;
+    double crossing_capture_rad = 20.0 * M_PI / 180.0;
+    double crossing_rearm_rad = 12.0 * M_PI / 180.0;
+    double min_crossing_separation_ratio = 0.55;
+    double max_crossing_gap_faces = 2.5;
+    std::size_t max_crossings = 24;
+    // Calibration needs a few crossings, not a long history. The original value of
+    // eight assumed a clock that survives a whole session; in practice the anchor
+    // is dropped by target loss and re-acquisition, so a high threshold meant the
+    // period was never learned at all (field log 2026-10-31_04-15-44: calib stayed
+    // 0 for 87 s).
+    std::size_t min_crossings_for_calibration = 4;
+    std::int64_t min_slope_span_faces = 2;
+    double period_min_ratio = 0.90;
+    double period_max_ratio = 1.10;
+    double max_period_step_ratio = 0.005;
+    double max_phase_step_s = 0.003;
+    double phase_gain = 0.25;
+    // Fractional rate deviation tolerated before the reference rate is re-seeded.
+    // Not a reset: the learned period is kept.
+    double rate_reseed_ratio = 0.25;
+    // The test chassis spins at a mechanically fixed rate, so the period is a
+    // constant and there is nothing for calibration to learn. With this off the
+    // clock keeps the anchored period exactly; crossings are still recorded, but
+    // only as diagnostics. Leaving calibration on against a constant-rate target
+    // just adds noise to a value that is already correct, and every bounded step it
+    // takes moves the request phase away from the tuned offset.
+    bool calibrate_period = true;
+  };
+
+  struct Solution
+  {
+    bool valid = false;
+    std::int64_t cycle = -1;
+    double command_due_time_s = 0.0;
+    double time_until_command_s = std::numeric_limits<double>::infinity();
+    double face_period_s = 0.0;
+    double nominal_face_period_s = 0.0;
+    double phase_error_rad = NAN;
+    // Measured face-crossing time minus the time the clock predicted, in seconds.
+    // Positive means the face arrived late relative to the clock, so the request
+    // phase sits early; negative means the opposite.
+    double crossing_residual_s = NAN;
+    int crossing_count = 0;
+    double last_phase_adjustment_s = 0.0;
+    std::uint64_t calibration_updates = 0;
+  };
+
+  FixedCadenceTrigger() = default;
+  explicit FixedCadenceTrigger(const Config & config) : config_(config) {}
+
+  void set_config(const Config & config) { config_ = config; }
+  const Config & config() const { return config_; }
+
+  void reset()
+  {
+    anchored_ = false;
+    last_sample_s_ = NAN;
+    period_s_ = 0.0;
+    calibration_updates_ = 0;
+    large_residual_updates_ = 0;
+    last_phase_adjustment_s_ = 0.0;
+    last_crossing_residual_s_ = NAN;
+    crossing_count_ = 0;
+    have_phase_sample_ = false;
+    crossing_armed_ = true;
+    crossings_.clear();
+    ++cycle_;
+  }
+
+  // now_s         : decision time. sample_s stays separate so a replay can feed
+  //                 capture-time observations without changing the clock.
+  // sample_s      : capture time of the observation that produced phase_rad
+  // phase_rad     : body yaw relative to the target-centre bearing, caller-folded
+  // signed_omega  : signed rotation rate, rad/s
+  // offset_s      : request this long after a face centre passes
+  // every_n_faces : request once per N faces
+  Solution observe(
+    double now_s, double sample_s, double phase_rad, double signed_omega,
+    double offset_s, int every_n_faces, double max_age_s,
+    double max_observation_gap_s = 0.25, double late_tolerance_s = 0.03)
+  {
+    Solution out;
+    if (!std::isfinite(now_s) || !std::isfinite(sample_s) ||
+        !std::isfinite(phase_rad) || !std::isfinite(signed_omega) ||
+        !std::isfinite(offset_s) || !std::isfinite(max_age_s) || max_age_s <= 0.0 ||
+        !std::isfinite(max_observation_gap_s) || max_observation_gap_s <= 0.0 ||
+        !std::isfinite(late_tolerance_s) || late_tolerance_s < 0.0 ||
+        sample_s > now_s || now_s - sample_s > max_age_s ||
+        std::abs(signed_omega) < 0.05 || every_n_faces < 1) {
+      reset();
+      return out;
+    }
+
+    // Direction reversal, a stride/offset change or a lost observation invalidate
+    // the clock. Ordinary rate jitter must NOT: the rate here comes from a live
+    // estimator that moves every frame, so keying the clock on it would reset it
+    // continuously and calibration would never accumulate. The period is learned
+    // by calibrate() instead, seeded by the rate seen at anchor time.
+    if (anchored_ && (signed_omega * nominal_omega_ < 0.0 ||
+        every_n_faces != every_n_faces_ ||
+        std::abs(offset_s - configured_offset_s_) > 1e-9 ||
+        (std::isfinite(last_sample_s_) &&
+          (sample_s < last_sample_s_ || sample_s - last_sample_s_ > max_observation_gap_s)))) {
+      reset();
+    }
+    // Re-seed the reference rate only when the estimate drifts far outside what
+    // calibration can absorb. The bound is loose on purpose: each calibration step
+    // is clamped to a small fraction of a period, so a slightly wrong seed
+    // converges instead of forcing a reset.
+    if (anchored_ && std::abs(std::abs(signed_omega) - std::abs(nominal_omega_)) >
+        config_.rate_reseed_ratio * std::abs(nominal_omega_)) {
+      nominal_omega_ = signed_omega;
+    }
+    last_sample_s_ = sample_s;
+
+    const double nominal_face_period_s = (M_PI / 2.0) / std::abs(signed_omega);
+    const double folded = std::remainder(phase_rad, M_PI / 2.0);
+
+    if (!anchored_) {
+      // Only a physically near-centre observation starts the clock, so the anchor
+      // is a real face centre rather than an arbitrary instant.
+      if (std::abs(folded) > config_.anchor_tolerance_rad) return out;
+      nominal_omega_ = omega_ = signed_omega;
+      every_n_faces_ = every_n_faces;
+      configured_offset_s_ = offset_s;
+      period_s_ = every_n_faces * nominal_face_period_s;
+      offset_in_face_s_ = offset_modulo(offset_s, nominal_face_period_s);
+      anchor_s_ = sample_s - folded / omega_;
+      next_due_s_ = anchor_s_ + offset_in_face_s_;
+      anchored_ = true;
+      ++cycle_;
+    }
+
+    // Record crossings always (they drive the phase diagnostic), but only let them
+    // move the period when calibration is enabled. On a mechanically fixed-rate
+    // target the anchored period is already exact.
+    if (config_.calibrate_period) {
+      observe_crossing(sample_s, folded);
+    } else {
+      record_crossing_only(sample_s, folded);
+    }
+
+    // Skip missed slots rather than firing a burst to catch up.
+    if (next_due_s_ < now_s - late_tolerance_s) {
+      const auto skip = static_cast<std::int64_t>(std::ceil(
+        (now_s - late_tolerance_s - next_due_s_) / period_s_));
+      next_due_s_ += skip * period_s_;
+      cycle_ += skip;
+    }
+
+    // Phase error diagnostic.
+    //
+    // The previous expression compared the observed phase against the clock's own
+    // extrapolation, which is identically zero by construction (the anchor was
+    // derived from the same observation), so it reported +-0.00 forever and told
+    // the operator nothing. What actually matters is how far the measured face
+    // crossings sit from where the clock said they would be: that is the residual
+    // the phase offset has to absorb.
+    out.phase_error_rad = std::remainder(
+      last_crossing_residual_s_ * std::abs(omega_), M_PI / 2.0);
+    out.crossing_residual_s = last_crossing_residual_s_;
+    out.crossing_count = crossing_count_;
+    out.cycle = cycle_;
+    out.command_due_time_s = next_due_s_;
+    out.time_until_command_s = std::max(0.0, next_due_s_ - now_s);
+    out.face_period_s = period_s_ / every_n_faces_;
+    out.nominal_face_period_s = nominal_face_period_s;
+    out.last_phase_adjustment_s = last_phase_adjustment_s_;
+    out.calibration_updates = calibration_updates_;
+    out.valid = now_s - next_due_s_ <= late_tolerance_s;
+    return out;
+  }
+
+  void mark_fired()
+  {
+    if (anchored_) {
+      next_due_s_ += period_s_;
+      ++cycle_;
+    }
+  }
+
+  bool anchored() const { return anchored_; }
+  double command_interval_s() const { return anchored_ ? period_s_ : 0.0; }
+  double crossing_residual_s() const { return anchored_ ? last_crossing_residual_s_ : NAN; }
+  int crossing_count() const { return crossing_count_; }
+  std::uint64_t calibration_updates() const { return calibration_updates_; }
+  std::uint64_t large_residual_updates() const { return large_residual_updates_; }
+
+private:
+  struct CrossingSample
+  {
+    std::int64_t index;
+    double time_s;
+  };
+
+  static double median(std::vector<double> values)
+  {
+    if (values.empty()) return NAN;
+    std::sort(values.begin(), values.end());
+    const auto middle = values.size() / 2;
+    return values.size() % 2 ? values[middle] : 0.5 * (values[middle - 1] + values[middle]);
+  }
+
+  static double offset_modulo(double offset, double face_period)
+  {
+    if (!(face_period > 0.0)) return 0.0;
+    double value = std::fmod(offset, face_period);
+    return value < 0.0 ? value + face_period : value;
+  }
+
+  // Interpolate the instant a face centre crossed zero between two samples.
+  // Returns NAN when this sample pair is not a usable crossing: not armed yet, too
+  // far from centre to trust the interpolation, or closer than half a face to the
+  // previous one (a noisy duplicate rather than the next plate).
+  double detect_crossing(double sample_s, double folded)
+  {
+    const double previous_s = previous_phase_time_s_;
+    const double previous_phase = previous_phase_rad_;
+    previous_phase_time_s_ = sample_s;
+    previous_phase_rad_ = folded;
+    if (!have_phase_sample_) {
+      have_phase_sample_ = true;
+      return NAN;
+    }
+    const double dt = sample_s - previous_s;
+    if (!crossing_armed_ && std::abs(folded) >= config_.crossing_rearm_rad) crossing_armed_ = true;
+    if (!crossing_armed_ || dt <= 0.0 || dt > 0.10) return NAN;
+
+    const bool crossing = nominal_omega_ > 0.0
+      ? previous_phase <= 0.0 && folded >= 0.0
+      : previous_phase >= 0.0 && folded <= 0.0;
+    if (!crossing ||
+      std::max(std::abs(previous_phase), std::abs(folded)) > config_.crossing_capture_rad) {
+      return NAN;
+    }
+
+    const double denominator = std::abs(previous_phase) + std::abs(folded);
+    if (denominator <= 1e-12) return NAN;
+    crossing_armed_ = false;
+    const double cross_s = previous_s + dt * std::abs(previous_phase) / denominator;
+
+    const double face_s = period_s_ / every_n_faces_;
+    if (!(face_s > 0.0)) return NAN;
+    if (!crossings_.empty()) {
+      const double gap_s = cross_s - crossings_.back().time_s;
+      if (gap_s < config_.min_crossing_separation_ratio * face_s) return NAN;
+      if (gap_s > config_.max_crossing_gap_faces * face_s) crossings_.clear();
+    }
+    return cross_s;
+  }
+
+  // Detect a face centre passing zero and keep a bounded history. Pairwise slopes
+  // spanning several passages are medianed instead of adjacent differences: field
+  // data shows alternating long/short intervals that would bias the frequency.
+  void observe_crossing(double sample_s, double folded)
+  {
+    const double cross_s = detect_crossing(sample_s, folded);
+    if (!std::isfinite(cross_s)) return;
+    ++crossing_count_;
+
+    const double face_s = period_s_ / every_n_faces_;
+    const auto index = crossings_.empty() ? std::int64_t{0}
+      : crossings_.back().index + std::max<std::int64_t>(1,
+          std::llround((cross_s - crossings_.back().time_s) / face_s));
+    if (std::isfinite(anchor_s_) && face_s > 0.0) {
+      const double predicted_s = anchor_s_ + std::round((cross_s - anchor_s_) / face_s) * face_s;
+      last_crossing_residual_s_ = cross_s - predicted_s;
+    }
+    crossings_.push_back({index, cross_s});
+    while (crossings_.size() > config_.max_crossings) crossings_.pop_front();
+    if (crossings_.size() < config_.min_crossings_for_calibration) return;
+
+    std::vector<double> slopes;
+    for (std::size_t i = 0; i < crossings_.size(); ++i) {
+      for (std::size_t j = i + 1; j < crossings_.size(); ++j) {
+        const auto count = crossings_[j].index - crossings_[i].index;
+        if (count >= config_.min_slope_span_faces) {
+          slopes.push_back(
+            (crossings_[j].time_s - crossings_[i].time_s) / static_cast<double>(count));
+        }
+      }
+    }
+    const double fitted_period_s = median(slopes);
+    if (!std::isfinite(fitted_period_s)) return;
+
+    std::vector<double> anchors;
+    anchors.reserve(crossings_.size());
+    for (const auto & point : crossings_) {
+      anchors.push_back(point.time_s + (index - point.index) * fitted_period_s);
+    }
+    calibrate(fitted_period_s, median(anchors));
+  }
+
+  // Diagnostic-only variant: same crossing detection and residual bookkeeping, but
+  // never moves the period or the anchor. Used when the target rate is mechanically
+  // fixed, so the anchored period is already exact and calibration would only push
+  // a correct value around.
+  void record_crossing_only(double sample_s, double folded)
+  {
+    const double cross_s = detect_crossing(sample_s, folded);
+    if (!std::isfinite(cross_s)) return;
+    ++crossing_count_;
+    // What the clock expected for this crossing, measured against the anchor and
+    // the whole number of faces elapsed.
+    const double face_s = period_s_ / every_n_faces_;
+    if (face_s > 0.0 && std::isfinite(anchor_s_)) {
+      const double faces_elapsed = std::round((cross_s - anchor_s_) / face_s);
+      const double predicted_s = anchor_s_ + faces_elapsed * face_s;
+      last_crossing_residual_s_ = cross_s - predicted_s;
+    }
+  }
+
+  // Slew period and phase slowly. Snapping to each observation would let one noisy
+  // crossing move the clock a large fraction of a face; small bounded steps keep
+  // the request phase continuous across a whole session.
+  void calibrate(double observed_face_period_s, double observed_anchor_s)
+  {
+    const double old_face_period_s = period_s_ / every_n_faces_;
+    const double nominal_face_period_s = (M_PI / 2.0) / std::abs(nominal_omega_);
+    if (!std::isfinite(observed_face_period_s) || !std::isfinite(observed_anchor_s) ||
+        !(old_face_period_s > 0.0) || !(nominal_face_period_s > 0.0) ||
+        observed_face_period_s < config_.period_min_ratio * nominal_face_period_s ||
+        observed_face_period_s > config_.period_max_ratio * nominal_face_period_s) {
+      return;
+    }
+
+    // Pivot at the recent crossing instead of rescaling elapsed time from t0,
+    // otherwise a small period update still makes a large late-session jump.
+    const double crossing_index = std::round((observed_anchor_s - anchor_s_) / old_face_period_s);
+    const double predicted_anchor_s = anchor_s_ + crossing_index * old_face_period_s;
+    const double residual_s = observed_anchor_s - predicted_anchor_s;
+    if (std::abs(residual_s) > 0.25 * old_face_period_s) ++large_residual_updates_;
+
+    const double faces_to_slot = std::round(
+      (next_due_s_ - offset_in_face_s_ - predicted_anchor_s) / old_face_period_s);
+
+    const double step = config_.max_period_step_ratio;
+    const double new_face_period_s = std::clamp(
+      observed_face_period_s, old_face_period_s * (1.0 - step),
+      old_face_period_s * (1.0 + step));
+
+    last_phase_adjustment_s_ = std::clamp(
+      config_.phase_gain * residual_s, -config_.max_phase_step_s, config_.max_phase_step_s);
+    anchor_s_ = predicted_anchor_s + last_phase_adjustment_s_;
+    period_s_ = every_n_faces_ * new_face_period_s;
+    omega_ = std::copysign((M_PI / 2.0) / new_face_period_s, nominal_omega_);
+    offset_in_face_s_ = offset_modulo(configured_offset_s_, new_face_period_s);
+    next_due_s_ = anchor_s_ + faces_to_slot * new_face_period_s + offset_in_face_s_;
+    ++calibration_updates_;
+  }
+
+  Config config_{};
+  bool anchored_ = false;
+  double nominal_omega_ = 0.0;
+  double omega_ = 0.0;
+  double period_s_ = 0.0;
+  double next_due_s_ = 0.0;
+  int every_n_faces_ = 1;
+  double configured_offset_s_ = 0.0;
+  double offset_in_face_s_ = 0.0;
+  double anchor_s_ = 0.0;
+  double last_sample_s_ = NAN;
+  // Measured crossing time minus the clock's prediction, seconds. This is the
+  // quantity the phase offset has to absorb, and the only phase diagnostic that
+  // carries information.
+  double last_crossing_residual_s_ = NAN;
+  int crossing_count_ = 0;
+  double last_phase_adjustment_s_ = 0.0;
+  std::uint64_t calibration_updates_ = 0;
+  std::uint64_t large_residual_updates_ = 0;
+  bool have_phase_sample_ = false;
+  bool crossing_armed_ = true;
+  double previous_phase_time_s_ = 0.0;
+  double previous_phase_rad_ = 0.0;
+  std::deque<CrossingSample> crossings_;
+  std::int64_t cycle_ = 0;
+};
+
 }  // namespace auto_aim
 
 #endif  // AUTO_AIM__GYRO_PHASE_SCHEDULER_HPP

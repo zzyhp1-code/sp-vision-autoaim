@@ -1,7 +1,10 @@
 #include "hikrobot.hpp"
+#include "io/camera_preview.hpp"
 
 #include <libusb-1.0/libusb.h>
 #include <yaml-cpp/yaml.h>
+#include <vector>
+#include <utility>
 
 #include "tools/logger.hpp"
 
@@ -9,8 +12,8 @@ using namespace std::chrono_literals;
 
 namespace io
 {
-HikRobot::HikRobot(const std::string & config_path)
-: exposure_us_(0.0),
+HikRobot::HikRobot(const std::string & config_path, CameraPreview * preview)
+: preview_(preview), exposure_us_(0.0),
   gain_(0.0),
   frame_rate_(150.0),
   width_(0),
@@ -40,6 +43,11 @@ HikRobot::HikRobot(const std::string & config_path)
   if (yaml["camera_height"]) height_ = yaml["camera_height"].as<int64_t>();
   if (yaml["camera_offset_x"]) offset_x_ = yaml["camera_offset_x"].as<int64_t>();
   if (yaml["camera_offset_y"]) offset_y_ = yaml["camera_offset_y"].as<int64_t>();
+  if (yaml["camera_preview_width"] && yaml["camera_preview_height"]) {
+    view_ = camera_view(width_, height_, offset_x_, offset_y_,
+      yaml["camera_preview_width"].as<int>(), yaml["camera_preview_height"].as<int>());
+    wide_view_ = true;
+  }
   if (yaml["hikrobot_pixel_format"]) {
     pixel_format_ = yaml["hikrobot_pixel_format"].as<std::string>();
   }
@@ -139,9 +147,24 @@ void HikRobot::capture_start()
   // Reset offsets before resizing, then apply the calibrated crop origin.
   if (width_ > 0 || height_ > 0 || offset_x_ != 0 || offset_y_ != 0) {
     if (!set_int_value("OffsetX", 0) || !set_int_value("OffsetY", 0)) return;
-    if (width_ > 0 && !set_int_value("Width", width_)) return;
-    if (height_ > 0 && !set_int_value("Height", height_)) return;
-    if (!set_int_value("OffsetX", offset_x_) || !set_int_value("OffsetY", offset_y_)) return;
+    if (width_ > 0 && !set_int_value("Width", wide_view_ ? view_.capture.width : width_)) return;
+    if (height_ > 0 && !set_int_value("Height", wide_view_ ? view_.capture.height : height_)) return;
+    if (!set_int_value("OffsetX", wide_view_ ? view_.capture.x : offset_x_) ||
+        !set_int_value("OffsetY", wide_view_ ? view_.capture.y : offset_y_)) return;
+    if (wide_view_) {
+      for (const auto & item : std::vector<std::pair<std::string,int64_t>>{
+          {"Width",view_.capture.width},{"Height",view_.capture.height},
+          {"OffsetX",view_.capture.x},{"OffsetY",view_.capture.y}}) {
+        MVCC_INTVALUE_EX value{};
+        if (MV_CC_GetIntValueEx(handle_,item.first.c_str(),&value) != MV_OK || value.nCurValue != item.second) {
+          tools::logger()->error("Camera view readback mismatch: {}",item.first);
+          return;
+        }
+      }
+      tools::logger()->info("[CAMERAVIEW] sensor=({}, {}) {}x{} algorithm=({}, {}) {}x{}",
+        view_.capture.x,view_.capture.y,view_.capture.width,view_.capture.height,
+        view_.algorithm.x,view_.algorithm.y,view_.algorithm.width,view_.algorithm.height);
+    }
   }
   if (!pixel_format_.empty()) set_enum_value("PixelFormat", pixel_format_);
 
@@ -210,6 +233,11 @@ void HikRobot::capture_start()
         logged_frame_format = true;
       }
       const cv::Size frame_size(raw.stFrameInfo.nWidth, raw.stFrameInfo.nHeight);
+      if (wide_view_ && frame_size != view_.capture.size()) {
+        tools::logger()->error("Camera size mismatch; refusing incorrectly calibrated observation");
+        MV_CC_FreeImageBuffer(handle_, &raw);
+        break;
+      }
       cv::Mat bgr_img;
 
       // MVS 4.5 returns an error from MV_CC_ConvertPixelType for BayerRG8.
@@ -238,16 +266,21 @@ void HikRobot::capture_start()
 
       if (bayer_to_bgr >= 0) {
         cv::Mat raw_img(frame_size, CV_8UC1, raw.pBufAddr);
-        cv::cvtColor(raw_img, bgr_img, bayer_to_bgr);
+        if (wide_view_ && preview_) preview_->submit(raw_img, timestamp, bayer_to_bgr);
+        const cv::Mat algorithm = wide_view_ ? algorithm_camera_raw(raw_img,view_) : raw_img;
+        cv::cvtColor(algorithm, bgr_img, bayer_to_bgr);
       } else if (raw.stFrameInfo.enPixelType == PixelType_Gvsp_Mono8) {
         cv::Mat raw_img(frame_size, CV_8UC1, raw.pBufAddr);
-        cv::cvtColor(raw_img, bgr_img, cv::COLOR_GRAY2BGR);
+        if (wide_view_ && preview_) preview_->submit(raw_img,timestamp,cv::COLOR_GRAY2BGR);
+        cv::cvtColor(wide_view_ ? algorithm_camera_raw(raw_img,view_) : raw_img, bgr_img, cv::COLOR_GRAY2BGR);
       } else if (raw.stFrameInfo.enPixelType == PixelType_Gvsp_RGB8_Packed) {
         cv::Mat raw_img(frame_size, CV_8UC3, raw.pBufAddr);
-        cv::cvtColor(raw_img, bgr_img, cv::COLOR_RGB2BGR);
+        if (wide_view_ && preview_) preview_->submit(raw_img,timestamp,cv::COLOR_RGB2BGR);
+        cv::cvtColor(wide_view_ ? algorithm_camera_raw(raw_img,view_) : raw_img, bgr_img, cv::COLOR_RGB2BGR);
       } else if (raw.stFrameInfo.enPixelType == PixelType_Gvsp_BGR8_Packed) {
         cv::Mat raw_img(frame_size, CV_8UC3, raw.pBufAddr);
-        bgr_img = raw_img.clone();
+        if (wide_view_ && preview_) preview_->submit(raw_img,timestamp);
+        bgr_img = wide_view_ ? algorithm_camera_raw(raw_img,view_) : raw_img.clone();
       } else {
         tools::logger()->warn(
           "Unsupported HikRobot pixel type: {:#x}",

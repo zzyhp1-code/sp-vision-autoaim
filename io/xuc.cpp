@@ -131,6 +131,14 @@ XucSender::XucSender(const std::string & config_path)
   if (yaml["xuc_lock_pitch_for_control"]) {
     lock_pitch_for_control_ = yaml["xuc_lock_pitch_for_control"].as<bool>();
   }
+  // Absolute pitch held while the lock is on, in degrees, using the same
+  // convention as the [SYNC][XUC] "pitch=" readback (the IMU pitch). Setting this
+  // makes the lock independent of wherever the gimbal happened to be when AUTO
+  // engaged, so the same value can be dialled in before a match.
+  if (yaml["xuc_lock_pitch_deg"]) {
+    lock_pitch_deg_ = yaml["xuc_lock_pitch_deg"].as<double>();
+    lock_pitch_deg_configured_ = true;
+  }
   if (yaml["xuc_max_yaw_excursion_rad"]) {
     max_yaw_excursion_rad_ =
       std::max(0.0, yaml["xuc_max_yaw_excursion_rad"].as<double>());
@@ -221,14 +229,25 @@ void XucSender::send(const Command & cmd)
   // process.  Detector dropouts, link recovery, or a chattering feedback mode
   // must never move that origin.  A new physical test requires stopping and
   // restarting the process, which is also the safest explicit re-arm boundary.
+  // Units: the wire packet carries radians (pitch_sign_ is 1), and pitch_sign_ is
+  // applied to cmd.pitch above, so the locked value must be converted the same
+  // way rather than bypassing the sign.
+  // lock_pitch_deg_ is in degrees on the IMU readback scale.
+  const double locked_pitch_wire_rad =
+    pitch_sign_ * (lock_pitch_deg_ * M_PI / 180.0);
+
   if (control_requested && bounded_session) {
     if (!control_session_active_) {
       control_yaw_anchor_raw_ =
         static_cast<double>(imu_yaw_.load(std::memory_order_relaxed));
       control_session_active_ = true;
       tools::logger()->warn(
-        "[XUC][BOUNDED] control session anchored at raw yaw {:.2f} deg",
-        control_yaw_anchor_raw_ * 180.0 / M_PI);
+        "[XUC][BOUNDED] control session anchored at raw yaw {:.2f} deg "
+        "pitch_lock={} deg",
+        control_yaw_anchor_raw_ * 180.0 / M_PI,
+        lock_pitch_deg_configured_
+          ? fmt::format("{:.2f}", lock_pitch_deg_)
+          : std::string("session"));
     }
 
     if (max_yaw_excursion_rad_ > 0.0) {
@@ -238,8 +257,13 @@ void XucSender::send(const Command & cmd)
       target_yaw_raw = control_yaw_anchor_raw_ + delta;
     }
     if (lock_pitch_for_control_) {
-      target_pitch_raw =
-        static_cast<double>(imu_pitch_.load(std::memory_order_relaxed));
+      // Command a fixed pitch so the lower-level loop always sees a real error to
+      // close. Echoing the live IMU pitch (the previous behaviour) keeps that
+      // error at zero: recoil lifts the gimbal and nothing pulls it back, which
+      // showed up in the field as a one-way pitch walk.
+      target_pitch_raw = lock_pitch_deg_configured_
+        ? locked_pitch_wire_rad
+        : static_cast<double>(imu_pitch_.load(std::memory_order_relaxed));
     }
   } else if (!bounded_session) {
     control_session_active_ = false;

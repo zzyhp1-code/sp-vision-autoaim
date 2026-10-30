@@ -255,6 +255,9 @@ add_executable(
   gyro_phase_log_replay_test
   tasks/auto_aim/gyro_phase_log_replay_test.cpp)
 add_executable(
+  fixed_cadence_trigger_test
+  tasks/auto_aim/fixed_cadence_trigger_test.cpp)
+add_executable(
   rotation_model_manager_test
   tasks/auto_aim/rotation_model_manager_test.cpp)
 add_executable(
@@ -299,6 +302,7 @@ target_link_libraries(iterated_ekf_test tools)
 foreach(estimator_test
     gyro_phase_scheduler_test
     gyro_phase_log_replay_test
+    fixed_cadence_trigger_test
     rotation_model_manager_test
     measurement_noise_test
     yaw_eskf_test
@@ -355,6 +359,8 @@ if(OpenVINO_FOUND)
 endif()
 target_link_libraries(camera_pnp_test ${OpenCV_LIBS} fmt::fmt yaml-cpp tools auto_aim io)
 target_link_libraries(camera_test ${OpenCV_LIBS} fmt::fmt tools io)
+add_executable(camera_view_capture_test tests/camera_view_capture_test.cpp)
+target_link_libraries(camera_view_capture_test ${OpenCV_LIBS} fmt::fmt tools io)
 target_link_libraries(camera_thread_test ${OpenCV_LIBS} fmt::fmt auto_aim tools io)
 target_link_libraries(cboard_test ${OpenCV_LIBS} fmt::fmt tools io)
 target_link_libraries(fire_test ${OpenCV_LIBS} fmt::fmt tools io)

@@ -177,6 +177,11 @@ private:
   double max_yaw_excursion_rad_ = 0.0;
   bool control_session_active_ = false;
   double control_yaw_anchor_raw_ = 0.0;
+  // Absolute pitch to hold while locked, in degrees on the same scale as the IMU
+  // readback. When configured the lock ignores the session state entirely, so the
+  // held angle does not depend on where the gimbal was when AUTO engaged.
+  double lock_pitch_deg_ = 0.0;
+  bool lock_pitch_deg_configured_ = false;
   double feeder_active_rpm_threshold_ = 500.0;
 
   std::thread recv_thread_;

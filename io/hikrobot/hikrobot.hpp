@@ -10,6 +10,7 @@
 
 #include "MvCameraControl.h"
 #include "io/camera.hpp"
+#include "io/camera_view.hpp"
 #include "tools/thread_safe_queue.hpp"
 
 namespace io
@@ -17,11 +18,14 @@ namespace io
 class HikRobot : public CameraBase
 {
 public:
-  explicit HikRobot(const std::string & config_path);
+  explicit HikRobot(const std::string & config_path, CameraPreview * preview = nullptr);
   ~HikRobot() override;
   void read(cv::Mat & img, std::chrono::steady_clock::time_point & timestamp) override;
 
 private:
+  CameraPreview * preview_;
+  bool wide_view_ = false;
+  CameraView view_;
   struct CameraData
   {
     cv::Mat img;

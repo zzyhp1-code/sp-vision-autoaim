@@ -1,4 +1,5 @@
 #include "camera.hpp"
+#include "camera_preview.hpp"
 
 #include <stdexcept>
 
@@ -17,6 +18,8 @@ Camera::Camera(const std::string & config_path)
   auto yaml = tools::load(config_path);
   auto camera_name = tools::read<std::string>(yaml, "camera_name");
   auto exposure_ms = tools::read<double>(yaml, "exposure_ms");
+  try { preview_ = std::make_unique<CameraPreview>(); }
+  catch (const std::exception & e) { tools::logger()->warn("Camera preview unavailable: {}", e.what()); }
 
   tools::logger()->info("Camera constructor: config_path={}, camera_name={}", config_path, camera_name);
 
@@ -34,7 +37,8 @@ Camera::Camera(const std::string & config_path)
 
   else if (camera_name == "hikrobot") {
     tools::logger()->info("Creating HikRobot camera");
-    camera_ = std::make_unique<HikRobot>(config_path);
+    driver_preview_ = yaml["camera_preview_width"] && yaml["camera_preview_height"];
+    camera_ = std::make_unique<HikRobot>(config_path, driver_preview_ ? preview_.get() : nullptr);
   }
 
 #ifdef HAVE_GXIAPI
@@ -49,11 +53,15 @@ Camera::Camera(const std::string & config_path)
   }
 
   tools::logger()->info("Camera constructor completed");
+  // The preview receiver is optional; it never owns/opens the hardware camera.
 }
+
+Camera::~Camera() = default;
 
 void Camera::read(cv::Mat & img, std::chrono::steady_clock::time_point & timestamp)
 {
   camera_->read(img, timestamp);
+  if (preview_ && !driver_preview_) preview_->submit(img, timestamp);
 }
 
 uint64_t Camera::get_last_frame_id() const

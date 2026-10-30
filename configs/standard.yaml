@@ -175,6 +175,8 @@ exposure_ms: 6.0
 gain: 16.0
 camera_width: 1600
 camera_height: 1080
+camera_preview_width: 2048       # wider sensor capture for FPV only
+camera_preview_height: 1536      # algorithm retains camera_width/height and sensor offsets
 camera_offset_x: 736              # (3072 - 1600) / 2
 camera_offset_y: 480              # 居中为 484，按 8 对齐取 480
 camera_fps: 60.0
@@ -243,7 +245,10 @@ xuc_imu_pitch_offset_rad: 0.0
 xuc_require_feedback_for_control: true
 xuc_require_auto_mode_for_control: false  # 下位机按当前遥控器档位直接回报 mode；避免串口互锁
 xuc_max_yaw_excursion_rad: 0.0          # 双轴联调：上位机不额外截断，下位机保留 Yaw ±25°/实际±28°保护
-xuc_lock_pitch_for_control: false       # 允许下发 Pitch；下位机限制 ±15°/80°每秒
+xuc_lock_pitch_for_control: true        # 锁定：下发 pitch = 当前 IMU pitch，云台 pitch 不再响应视觉
+# 锁定时的绝对 pitch（度，与 [SYNC][XUC] 的 pitch= 同一刻度）。
+# 入场前按目标高度设好，与进入 AUTO 时的云台位置无关。
+xuc_lock_pitch_deg: 0.5
 xuc_allow_control: true             # 弱光环境下的偏航/俯仰跟随测试
 xuc_allow_shoot: true               # 2026-10-12 22:35 解除开火限制（试射）；其余发射门控全部保留
 # 2026-10-14 新增：常驻 control 开关。开启后，AUTO 档内目标丢失超短时窗口时，
@@ -461,6 +466,24 @@ xuc_event_flight_time_uncertainty_ms: 5
 # 帧率约为 70 FPS 时，提前 30 ms 只包含约两帧决策机会。将提前窗口设为 50 ms，
 # 可增加合格事件的机会；随后仍由 sleep_until 在相同的相位截止时刻发送。
 xuc_event_trigger_window_ms: 50
+# ===== 定节拍拨弹（参考哨兵 100% 命中方案）=====
+# 开启后不再逐帧判断『此刻板是否对准』——60fps 下每帧靶已转 4~5°，
+# 而可用窗口只占面周期的极小一段，逐帧判据几乎必然拒绝。
+# 改为：观测到板中心过零时锚定时钟，之后每 N 面在该相位发一次。
+# 时钟只用新鲜观测推进；观测过期即丢锚，不会盲发。
+xuc_periodic_fire_enabled: true
+# 板中心过零后多久发令（毫秒）。这一个数吸收指令到命中的全链路，
+# 是唯一需要在靶上标的参数：偏早/偏晚只调它。
+xuc_periodic_phase_offset_ms: 410.0
+# 每隔几块板请求一发。机械跟不上时先加大这个值，不要加频率。
+xuc_periodic_every_n_faces: 2
+# 观测最大年龄；超时即丢锚。
+xuc_periodic_max_observation_age_ms: 100.0
+# 靶车机械定速，用固定角速度驱动节拍时钟，不用 EKF 实时估计。
+# 靶车机械定速，用固定角速度驱动节拍时钟，不用 EKF 实时估计。
+# 只有方向（正/反转）取 EKF；大小用这个常数，周期因此固定、不做校准。
+xuc_periodic_fixed_omega_rad_s: 4.3458
+
 xuc_event_send_late_tolerance_ms: 2
 xuc_event_crossing_capture_deg: 20
 xuc_event_crossing_rearm_deg: 12
